@@ -5,7 +5,16 @@ import { tmpdir } from "node:os";
 import { Store } from "../dist/store.js";
 import { Runner } from "../dist/runner.js";
 import { startDemo, demoProject } from "../dist/demo.js";
+import { chromium } from "playwright";
 assert.notEqual(process.getuid(), 0, "Container must run as a non-root user");
+// Surface full launch diagnostics in this synthetic fixture before the runner's
+// intentionally bounded, redacted error report is involved.
+const browser = await chromium.launch({
+  channel: "chromium",
+  headless: true,
+  chromiumSandbox: true,
+});
+await browser.close();
 const dir = mkdtempSync(join(tmpdir(), "inspector-container-"));
 const store = new Store(dir),
   demo = await startDemo(0);
