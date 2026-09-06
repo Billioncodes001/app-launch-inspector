@@ -12,3 +12,9 @@ artifacts/
 *.zip
 storage-state*.json
 cookies*.json
+*.sqlite
+*.sqlite-*
+master.key
+backups/
+data/
+secrets/

@@ -57,8 +57,10 @@ test("real browser finds four seeded failures; corrected application passes all 
   } finally {
     await runner.close();
     await demo.close();
-    if (dir.startsWith(join(tmpdir(), "launch-inspector-browser-")))
+    if (dir.startsWith(join(tmpdir(), "launch-inspector-browser-"))) {
+      store.close();
       rmSync(dir, { recursive: true, force: true });
+    }
   }
 });
 test("failed authorized baseline is inconclusive and does not certify a permission boundary", async () => {
@@ -80,8 +82,10 @@ test("failed authorized baseline is inconclusive and does not certify a permissi
   } finally {
     await runner.close();
     await demo.close();
-    if (dir.startsWith(join(tmpdir(), "launch-inspector-baseline-")))
+    if (dir.startsWith(join(tmpdir(), "launch-inspector-baseline-"))) {
+      store.close();
       rmSync(dir, { recursive: true, force: true });
+    }
   }
 });
 test("out-of-scope browser requests are blocked and prevent a clean pass", async () => {
@@ -158,8 +162,10 @@ test("out-of-scope browser requests are blocked and prevent a clean pass", async
       new Promise<void>((r) => site.close(() => r())),
       new Promise<void>((r) => external.close(() => r())),
     ]);
-    if (dir.startsWith(join(tmpdir(), "launch-inspector-scope-")))
+    if (dir.startsWith(join(tmpdir(), "launch-inspector-scope-"))) {
+      store.close();
       rmSync(dir, { recursive: true, force: true });
+    }
   }
 });
 test("queued cancellation, active cancellation and shutdown do not replay actions", async () => {
@@ -189,7 +195,9 @@ test("queued cancellation, active cancellation and shutdown do not replay action
   } finally {
     await runner.close();
     await demo.close();
-    if (dir.startsWith(join(tmpdir(), "launch-inspector-cancel-")))
+    if (dir.startsWith(join(tmpdir(), "launch-inspector-cancel-"))) {
+      store.close();
       rmSync(dir, { recursive: true, force: true });
+    }
   }
 });

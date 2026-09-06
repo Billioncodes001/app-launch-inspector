@@ -38,31 +38,16 @@ import type {
   ProjectInput,
   PublicProject,
   Run,
+  SessionInfo,
+  Membership,
+  FindingReview,
 } from "../../src/contracts";
+import { request, headers, setContext } from "./client";
+import { Governance, ReviewForm } from "./governance";
 
-const token =
-  document.querySelector<HTMLMetaElement>('meta[name="inspector-token"]')
-    ?.content ?? "";
-async function request<T>(
-  path: string,
-  method = "GET",
-  body?: unknown,
-): Promise<T> {
-  const response = await fetch("/api" + path, {
-    method,
-    headers: {
-      "X-Inspector-Token": token,
-      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const result = await response.json();
-  if (!response.ok) throw Error(result.error ?? "Request failed");
-  return result;
-}
 async function download(run: Run, format: string) {
   const response = await fetch(`/api/runs/${run.id}/export?format=${format}`, {
-    headers: { "X-Inspector-Token": token },
+    headers: headers(),
   });
   if (!response.ok) throw Error("Report could not be downloaded");
   const url = URL.createObjectURL(await response.blob());
@@ -140,19 +125,59 @@ function Field({
     </div>
   );
 }
-function App() {
+function App({
+  session,
+  organization,
+  onSwitch,
+  onSignOut,
+}: {
+  session: SessionInfo;
+  organization: Membership;
+  onSwitch: (id: string) => void;
+  onSignOut: () => void;
+}) {
   const [state, setState] = useState<{
     projects: PublicProject[];
     runs: Run[];
     version: string;
-  }>({ projects: [], runs: [], version: "0.1.0" });
+    organization: Membership;
+    approvedOrigins: string[];
+    permissions: {
+      canWrite: boolean;
+      canCreate: boolean;
+      canManage: boolean;
+      canAcceptRisk: boolean;
+    };
+  }>({
+    projects: [],
+    runs: [],
+    version: "0.2.0",
+    organization,
+    approvedOrigins: [],
+    permissions: {
+      canWrite: organization.role !== "viewer",
+      canCreate:
+        organization.role !== "viewer" && !organization.projectIds.length,
+      canManage: organization.role === "owner",
+      canAcceptRisk: organization.role === "owner",
+    },
+  });
+  const { canWrite, canCreate, canManage, canAcceptRisk } = state.permissions;
+  const hosted = session.mode === "hosted";
+  const storagePrefix = "inspector-" + organization.organizationId + "-";
   const [selected, setSelected] = useState(
-      () => localStorage.getItem("inspector-project") ?? "",
+      () =>
+        localStorage.getItem(storagePrefix + "project") ??
+        (hosted ? "" : (localStorage.getItem("inspector-project") ?? "")),
     ),
     [runId, setRunId] = useState(
-      () => localStorage.getItem("inspector-run") ?? "",
+      () =>
+        localStorage.getItem(storagePrefix + "run") ??
+        (hosted ? "" : (localStorage.getItem("inspector-run") ?? "")),
     ),
-    [view, setView] = useState<"workbench" | "setup">("workbench");
+    [view, setView] = useState<"workbench" | "setup" | "governance">(
+      "workbench",
+    );
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(""),
     [loaded, setLoaded] = useState(false),
@@ -176,8 +201,8 @@ function App() {
     return () => clearInterval(interval);
   }, []);
   useEffect(() => {
-    localStorage.setItem("inspector-project", selected);
-    localStorage.setItem("inspector-run", runId);
+    localStorage.setItem(storagePrefix + "project", selected);
+    localStorage.setItem(storagePrefix + "run", runId);
   }, [selected, runId]);
   const project = state.projects.find((p) => p.id === selected);
   const run = state.runs.find((r) => r.id === runId);
@@ -201,6 +226,7 @@ function App() {
       const p = await request<PublicProject>("/demo", "POST", { variant });
       const r = await request<Run>("/runs", "POST", {
         projectId: p.id,
+        revision: p.revision,
         authorized: true,
       });
       setSelected(p.id);
@@ -229,9 +255,42 @@ function App() {
           Launch Inspector<span>LAB / 01</span>
         </a>
         <div className="header-right">
+          {hosted && (
+            <>
+              <label className="organization-switch">
+                <span className="sr-only">Organization workspace</span>
+                <select
+                  aria-label="Organization workspace"
+                  value={organization.organizationId}
+                  onChange={(e) => onSwitch(e.target.value)}
+                >
+                  {session.organizations.map((o) => (
+                    <option key={o.organizationId} value={o.organizationId}>
+                      {o.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="text-button" onClick={onSignOut}>
+                Sign out
+              </button>
+            </>
+          )}
+          {canManage && (
+            <button
+              className="workspace-controls"
+              onClick={() =>
+                setView(view === "governance" ? "workbench" : "governance")
+              }
+              aria-pressed={view === "governance"}
+            >
+              <Settings2 size={16} />
+              {hosted ? "Organization" : "Workspace"} controls
+            </button>
+          )}
           <span className="local">
             <i />
-            Local workspace
+            {hosted ? state.organization.role : "Local workspace"}
           </span>
           <span className="version">v{state.version}</span>
         </div>
@@ -241,30 +300,34 @@ function App() {
           <div>
             <p className="eyebrow">SHIP WITH EVIDENCE</p>
             <h1>
-              {view === "setup"
-                ? "Configure an inspection"
-                : "Inspection workbench"}
+              {view === "governance"
+                ? "Workspace governance"
+                : view === "setup"
+                  ? "Configure an inspection"
+                  : "Inspection workbench"}
             </h1>
             <p>
-              {view === "setup"
-                ? "Define your target, test accounts and the behavior you expect."
-                : "Test the paths your customers depend on. Keep the proof."}
+              {view === "governance"
+                ? "Manage access and review the history behind inspection decisions."
+                : view === "setup"
+                  ? "Define your target, test accounts and the behavior you expect."
+                  : "Test the paths your customers depend on. Keep the proof."}
             </p>
           </div>
           <div className="heading-actions">
-            {view === "setup" ? (
+            {view !== "workbench" ? (
               <button
                 className="button secondary"
                 onClick={() => setView("workbench")}
               >
                 Back to workbench
               </button>
-            ) : (
+            ) : canCreate ? (
               <button className="button secondary" onClick={() => setup()}>
                 <Plus size={16} />
                 New target
               </button>
-            )}
+            ) : null}
           </div>
         </div>
         {error && (
@@ -298,7 +361,14 @@ function App() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.16 }}
           >
-            {view === "setup" ? (
+            {view === "governance" && canManage ? (
+              <Governance
+                hosted={hosted}
+                organization={state.organization}
+                projects={state.projects}
+                origins={state.approvedOrigins}
+              />
+            ) : view === "setup" && canWrite ? (
               <ProjectEditor
                 key={editing?.id ?? "new"}
                 initial={editing}
@@ -309,6 +379,9 @@ function App() {
                       editing ? "/projects/" + editing.id : "/projects",
                       editing ? "PUT" : "POST",
                       p,
+                      editing
+                        ? { "If-Match": '"' + editing.revision + '"' }
+                        : {},
                     );
                     setSelected(saved.id);
                     setAuthorized(false);
@@ -358,18 +431,19 @@ function App() {
                   <button
                     className="icon-button"
                     aria-label="Edit selected target"
-                    disabled={!project}
+                    disabled={!project || !canWrite}
                     onClick={() => setup(project)}
                   >
                     <Settings2 size={19} />
                   </button>
                   <button
                     className="button"
-                    disabled={!project || !authorized || !!busy}
+                    disabled={!project || !authorized || !!busy || !canWrite}
                     onClick={() =>
                       act("run", async () => {
                         const r = await request<Run>("/runs", "POST", {
                           projectId: selected,
+                          revision: project?.revision,
                           authorized: true,
                         });
                         setRunId(r.id);
@@ -384,7 +458,7 @@ function App() {
                     )}
                     Run inspection
                   </button>
-                  {project && (
+                  {project && canWrite && (
                     <label className="authorization">
                       <input
                         type="checkbox"
@@ -453,7 +527,7 @@ function App() {
                     <div className="history-foot">
                       <LockKeyhole size={14} />
                       <span>
-                        Credentials encrypted locally.
+                        Credentials encrypted at rest.
                         <br />
                         Screenshots stay in this workspace.
                       </span>
@@ -475,6 +549,17 @@ function App() {
                           act("download", () => download(run, format))
                         }
                         busy={!!busy}
+                        canWrite={canWrite}
+                        canAcceptRisk={canAcceptRisk}
+                        onReview={(index, status, note, version) => {
+                          void act("review", async () => {
+                            await request(
+                              `/runs/${run.id}/reviews/${index}`,
+                              "PUT",
+                              { status, note, version },
+                            );
+                          });
+                        }}
                       />
                     ) : (
                       <div className="welcome">
@@ -517,40 +602,42 @@ function App() {
                             <span>Prove the outcome</span>
                           </div>
                         </div>
-                        <div className="sample-box">
-                          <FlaskConical size={25} />
-                          <div>
-                            <h3>See an inspection in action</h3>
-                            <p>
-                              The sample app has real, intentional permission
-                              and persistence faults. Run it, then inspect the
-                              corrected version.
-                            </p>
-                            <div className="button-row">
-                              <button
-                                className="button"
-                                disabled={!!busy}
-                                onClick={() => sample("broken")}
-                              >
-                                <Play size={14} />
-                                Run faulty sample
-                              </button>
-                              <button
-                                className="button secondary"
-                                disabled={!!busy}
-                                onClick={() => sample("fixed")}
-                              >
-                                Run corrected sample
-                                <ArrowRight size={15} />
-                              </button>
+                        {!hosted && (
+                          <div className="sample-box">
+                            <FlaskConical size={25} />
+                            <div>
+                              <h3>See an inspection in action</h3>
+                              <p>
+                                The sample app has real, intentional permission
+                                and persistence faults. Run it, then inspect the
+                                corrected version.
+                              </p>
+                              <div className="button-row">
+                                <button
+                                  className="button"
+                                  disabled={!!busy}
+                                  onClick={() => sample("broken")}
+                                >
+                                  <Play size={14} />
+                                  Run faulty sample
+                                </button>
+                                <button
+                                  className="button secondary"
+                                  disabled={!!busy}
+                                  onClick={() => sample("fixed")}
+                                >
+                                  Run corrected sample
+                                  <ArrowRight size={15} />
+                                </button>
+                              </div>
                             </div>
                           </div>
-                        </div>
+                        )}
                       </div>
                     )}
                   </section>
                 </div>
-                {run && (
+                {run && !hosted && (
                   <div className="sample-shortcuts">
                     <span>
                       <FlaskConical size={16} />
@@ -598,11 +685,22 @@ function RunView({
   onCancel,
   onDownload,
   busy,
+  canWrite,
+  canAcceptRisk,
+  onReview,
 }: {
   run: Run;
   onCancel: () => void;
   onDownload: (format: string) => void;
   busy: boolean;
+  canWrite: boolean;
+  canAcceptRisk: boolean;
+  onReview: (
+    index: number,
+    status: FindingReview["status"],
+    note: string,
+    version: number,
+  ) => void;
 }) {
   const [index, setIndex] = useState(0);
   useEffect(
@@ -653,7 +751,7 @@ function RunView({
           {running ? (
             <button
               className="button secondary"
-              disabled={busy}
+              disabled={busy || !canWrite}
               onClick={onCancel}
             >
               <Square size={13} />
@@ -763,7 +861,25 @@ function RunView({
               </div>
             )}
           </div>
-          {result && <FindingView result={result} run={run} />}
+          {result && (
+            <FindingView
+              result={result}
+              run={run}
+              review={
+                result.status === "failed" && run.status === "completed" ? (
+                  <ReviewForm
+                    key={`${run.id}-${index}-${run.review?.[String(index)]?.version ?? 0}`}
+                    run={run}
+                    index={index}
+                    busy={busy}
+                    canWrite={canWrite}
+                    canAcceptRisk={canAcceptRisk}
+                    onSave={onReview}
+                  />
+                ) : undefined
+              }
+            />
+          )}
         </div>
       )}
       <div className="run-metadata">
@@ -774,7 +890,15 @@ function RunView({
     </>
   );
 }
-function FindingView({ result: r, run }: { result: CheckResult; run: Run }) {
+function FindingView({
+  result: r,
+  run,
+  review,
+}: {
+  result: CheckResult;
+  run: Run;
+  review?: React.ReactNode;
+}) {
   return (
     <article className="finding">
       <div className="finding-title">
@@ -821,6 +945,7 @@ function FindingView({ result: r, run }: { result: CheckResult; run: Run }) {
           <p>{r.recommendation}</p>
         </div>
       </div>
+      {review}
       {r.warnings.map((w, i) => (
         <p className="warning" key={i}>
           <CircleAlert size={14} />
@@ -864,7 +989,7 @@ function Evidence({
     let url = "",
       disposed = false;
     fetch(`/api/runs/${run}/evidence/${file}`, {
-      headers: { "X-Inspector-Token": token },
+      headers: headers(),
     })
       .then((r) => {
         if (!r.ok) throw Error();
@@ -1621,4 +1746,118 @@ function ProjectEditor({
     </form>
   );
 }
-createRoot(document.getElementById("root")!).render(<App />);
+function WorkspaceRoot() {
+  const [session, setSession] = useState<SessionInfo>(),
+    [organizationId, setOrganizationId] = useState(""),
+    [error, setError] = useState("");
+  async function load() {
+    try {
+      const response = await fetch("/api/session"),
+        value = (await response.json()) as SessionInfo;
+      if (!response.ok) throw Error("Workspace session could not be loaded");
+      const saved = localStorage.getItem("inspector-organization");
+      const id =
+        value.organizations.find((o) => o.organizationId === saved)
+          ?.organizationId ??
+        value.organizations[0]?.organizationId ??
+        "";
+      setContext(value, id);
+      setOrganizationId(id);
+      setSession(value);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  useEffect(() => {
+    void load();
+    const expire = () => {
+      setSession(undefined);
+      void load();
+    };
+    window.addEventListener("inspector-session-expired", expire);
+    return () =>
+      window.removeEventListener("inspector-session-expired", expire);
+  }, []);
+  const organization = session?.organizations.find(
+    (o) => o.organizationId === organizationId,
+  );
+  if (session?.authenticated && organization)
+    return (
+      <App
+        key={organizationId + session.user?.id}
+        session={session}
+        organization={organization}
+        onSwitch={(id) => {
+          setContext(session, id);
+          localStorage.setItem("inspector-organization", id);
+          setOrganizationId(id);
+        }}
+        onSignOut={() => {
+          void request("/logout", "POST", {})
+            .then(() => {
+              setSession(undefined);
+              return load();
+            })
+            .catch((e) => setError(e.message));
+        }}
+      />
+    );
+  return (
+    <main className="signin-page">
+      <div className="signin-brand">
+        <img src="/mark.svg" alt="" />
+        Launch Inspector
+      </div>
+      <section className="signin-card">
+        <p className="eyebrow">THE ORGANIZATION WORKSPACE</p>
+        <h1>Your release checkpoint.</h1>
+        <p>
+          Inspect critical application flows, review the evidence, and keep a
+          clear record of every release decision.
+        </p>
+        {error ? (
+          <div role="alert" className="alert">
+            {error}
+            <button
+              className="text-button"
+              onClick={() => {
+                setError("");
+                void load();
+              }}
+            >
+              Try again
+            </button>
+          </div>
+        ) : !session ? (
+          <p>
+            <LoaderCircle className="spin" size={20} />
+            Connecting to your workspace…
+          </p>
+        ) : (
+          <>
+            <a className="button" href="/auth/login">
+              <LockKeyhole size={17} />
+              Sign in with your work account
+              <ArrowRight size={17} />
+            </a>
+            <p className="signin-note">
+              Access is managed by your organization owner. Use the verified
+              email address approved for your membership.
+            </p>
+          </>
+        )}
+        <div className="signin-assurance">
+          <ShieldCheck size={20} />
+          <div>
+            <strong>Separate organizations. Explicit access.</strong>
+            <span>
+              Projects, test credentials and evidence are scoped to your
+              organization.
+            </span>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+createRoot(document.getElementById("root")!).render(<WorkspaceRoot />);

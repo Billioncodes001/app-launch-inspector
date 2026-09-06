@@ -1,0 +1,51 @@
+name: launch-inspector
+services:
+  inspector:
+    build: .
+    image: launch-inspector:0.2.0
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./deploy/seccomp_profile.json
+    shm_size: 256mb
+    mem_limit: 2g
+    pids_limit: 512
+    stop_grace_period: 45s
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=512m,mode=1777
+    environment:
+      INSPECTOR_MODE: hosted
+      INSPECTOR_HOST: 0.0.0.0
+      INSPECTOR_DATA_DIR: /data
+      INSPECTOR_PUBLIC_URL: https://${INSPECTOR_DOMAIN:?Set INSPECTOR_DOMAIN}
+      INSPECTOR_OIDC_ISSUER: ${INSPECTOR_OIDC_ISSUER:?Set INSPECTOR_OIDC_ISSUER}
+      INSPECTOR_OIDC_CLIENT_ID: ${INSPECTOR_OIDC_CLIENT_ID:?Set INSPECTOR_OIDC_CLIENT_ID}
+      INSPECTOR_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
+      INSPECTOR_OIDC_REQUIRED_ACR: ${INSPECTOR_OIDC_REQUIRED_ACR:-}
+    secrets:
+      - oidc_client_secret
+    volumes:
+      - inspector-data:/data
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      INSPECTOR_DOMAIN: ${INSPECTOR_DOMAIN:?Set INSPECTOR_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      inspector:
+        condition: service_healthy
+secrets:
+  oidc_client_secret:
+    file: ./secrets/oidc_client_secret.txt
+volumes:
+  inspector-data:
+  caddy-data:
+  caddy-config:

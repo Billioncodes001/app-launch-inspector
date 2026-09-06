@@ -1,0 +1,12 @@
+*
+!package.json
+!package-lock.json
+!tsconfig.server.json
+!tsconfig.ui.json
+!vite.config.ts
+!src/
+!src/**
+!ui/
+!ui/**
+!deploy/
+!deploy/healthcheck.mjs

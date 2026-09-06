@@ -215,4 +215,60 @@ export type Run = {
   results: CheckResult[];
   error?: string;
   authorizedAt: string;
+  requestedBy?: string;
+  review?: Record<string, FindingReview>;
 };
+
+export type Role = "owner" | "editor" | "viewer";
+export type Actor = { id: string; name: string; email?: string };
+export type Membership = {
+  organizationId: string;
+  name: string;
+  email: string;
+  role: Role;
+  projectIds: string[];
+  version: number;
+};
+export type FindingReview = {
+  status: "open" | "investigating" | "accepted_risk";
+  note: string;
+  actor: string;
+  updatedAt: string;
+  version: number;
+};
+export type AuditEntry = {
+  sequence: number;
+  at: string;
+  actor: string;
+  action: string;
+  resource: string;
+  details: Record<string, unknown>;
+  hash: string;
+};
+export type SessionInfo = {
+  mode: "local" | "hosted";
+  authenticated: boolean;
+  user?: Actor;
+  organizations: Membership[];
+  csrf: string;
+};
+export const memberSchema = z
+  .object({
+    email: z
+      .string()
+      .trim()
+      .email()
+      .max(254)
+      .transform((s) => s.toLowerCase()),
+    role: z.enum(["owner", "editor", "viewer"]),
+    projectIds: z.array(z.string().uuid()).max(100).default([]),
+    version: z.number().int().min(0),
+  })
+  .strict();
+export const reviewSchema = z
+  .object({
+    status: z.enum(["open", "investigating", "accepted_risk"]),
+    note: z.string().trim().min(10).max(1000),
+    version: z.number().int().min(0),
+  })
+  .strict();

@@ -12,10 +12,18 @@ export default defineConfig({
     channel: "chromium",
     screenshot: "only-on-failure",
   },
-  webServer: {
-    command: "npx tsx test/ui-server.ts",
-    url: "http://127.0.0.1:8797",
-    reuseExistingServer: false,
-    timeout: 30000,
-  },
+  webServer: [
+    {
+      command: "npx tsx test/ui-server.ts",
+      url: "http://127.0.0.1:8797",
+      reuseExistingServer: false,
+      timeout: 30000,
+    },
+    {
+      command: "npx tsx test/hosted-ui-server.ts",
+      url: "http://127.0.0.1:8798",
+      reuseExistingServer: false,
+      timeout: 30000,
+    },
+  ],
 });

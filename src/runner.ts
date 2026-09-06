@@ -6,40 +6,75 @@ import {
 } from "playwright";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import type { Project, Run, Check, CheckResult } from "./contracts.js";
+import type { Project, Run, Check, CheckResult, Actor } from "./contracts.js";
 import { Store } from "./store.js";
 import { inScope, pathUrl, targetPolicy } from "./network.js";
+import { BrowserCapacity } from "./capacity.js";
+import { localActor } from "./database.js";
 
 class Finding extends Error {}
 export class Runner {
-  private queue: Array<{ run: Run; project: Project }> = [];
+  private queue: Array<{
+    run: Run;
+    project: Project;
+    actor: Actor;
+    release: () => void;
+  }> = [];
   private current?: {
     run: Run;
     browser?: Browser;
     cancelled: boolean;
     timedOut: boolean;
     done: Promise<void>;
+    abort: AbortController;
   };
   private closing = false;
+  private faulted = false;
+  get healthy() {
+    return !this.faulted;
+  }
   constructor(
     readonly store: Store,
     readonly controlPort: number,
-    readonly options: { timeoutMs?: number; stepTimeoutMs?: number } = {},
+    readonly options: {
+      timeoutMs?: number;
+      stepTimeoutMs?: number;
+      capacity?: BrowserCapacity;
+      allowLoopback?: boolean;
+      sandbox?: boolean;
+      authorize?: (project: Project, actor: Actor) => void;
+    } = {},
   ) {
     store.recover();
   }
-  async enqueue(project: Project) {
-    if (this.closing) throw Error("Runner is stopping");
+  async enqueue(project: Project, actor: Actor = localActor) {
+    if (this.closing || this.faulted) throw Error("Runner is unavailable");
+    this.options.authorize?.(project, actor);
     if (this.queue.length + (this.current ? 1 : 0) >= 5)
       throw Error("The local inspection queue is full");
-    await targetPolicy(project.baseUrl, [this.controlPort]);
+    await targetPolicy(
+      project.baseUrl,
+      [this.controlPort],
+      this.options.allowLoopback,
+    );
     // Recheck after asynchronous DNS validation to enforce the queue bound.
     if (this.queue.length + (this.current ? 1 : 0) >= 5)
       throw Error("The local inspection queue is full");
-    const run = this.store.createRun(project);
-    this.queue.push({ run, project: structuredClone(project) });
-    void this.pump();
-    return run;
+    const release = this.options.capacity?.reserve() ?? (() => {});
+    try {
+      const run = this.store.createRun(project, actor);
+      this.queue.push({
+        run,
+        project: structuredClone(project),
+        actor,
+        release,
+      });
+      void this.pump();
+      return run;
+    } catch (error) {
+      release();
+      throw error;
+    }
   }
   async cancel(id: string) {
     const item = this.queue.find((q) => q.run.id === id);
@@ -47,11 +82,16 @@ export class Runner {
       this.queue = this.queue.filter((q) => q !== item);
       item.run.status = "cancelled";
       item.run.finishedAt = new Date().toISOString();
-      this.store.saveRun(item.run);
+      try {
+        this.store.saveRun(item.run);
+      } finally {
+        item.release();
+      }
       return;
     }
     if (this.current?.run.id === id) {
       this.current.cancelled = true;
+      this.current.abort.abort();
       await this.current.browser?.close();
       return;
     }
@@ -74,13 +114,14 @@ export class Runner {
     const done = new Promise<void>((resolve) => {
       complete = resolve;
     });
-    const { run, project } = item;
+    const { run, project, actor } = item;
     const active = {
       run,
       browser: undefined as Browser | undefined,
       cancelled: false,
       timedOut: false,
       done,
+      abort: new AbortController(),
     };
     this.current = active;
     const secrets = [
@@ -99,21 +140,55 @@ export class Runner {
         .slice(0, 1600);
     const timeout = setTimeout(() => {
       active.timedOut = true;
+      active.abort.abort();
       void active.browser?.close();
     }, this.options.timeoutMs ?? 180000);
+    let releaseBrowser: (() => void) | undefined;
     try {
+      releaseBrowser = await this.options.capacity?.acquire(
+        active.abort.signal,
+      );
+      this.options.authorize?.(project, actor);
       run.status = "running";
       this.store.saveRun(run);
-      const policy = await targetPolicy(project.baseUrl, [this.controlPort]);
+      const policy = await targetPolicy(
+        project.baseUrl,
+        [this.controlPort],
+        this.options.allowLoopback,
+      );
+      this.options.authorize?.(project, actor);
       if (active.cancelled || active.timedOut) return;
       active.browser = await chromium.launch({
         channel: "chromium",
         headless: true,
+        chromiumSandbox: this.options.sandbox ?? false,
+        env: Object.fromEntries(
+          Object.entries(process.env).filter(
+            ([key, value]) =>
+              value !== undefined &&
+              [
+                "PATH",
+                "HOME",
+                "TMPDIR",
+                "TEMP",
+                "TMP",
+                "SystemRoot",
+                "WINDIR",
+                "DISPLAY",
+                "XAUTHORITY",
+                "LANG",
+                "LC_ALL",
+                "FONTCONFIG_PATH",
+                "XDG_CACHE_HOME",
+              ].some((k) => k.toLowerCase() === key.toLowerCase()),
+          ),
+        ) as Record<string, string>,
         args: [
           ...(policy.resolverRule
             ? [`--host-resolver-rules=${policy.resolverRule}`]
             : []),
           "--disable-quic",
+          "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
           "--disable-features=DnsOverHttps,UseDnsHttpsSvcb",
         ],
       });
@@ -147,10 +222,17 @@ export class Runner {
         run.error =
           "Inspection reached its time budget. Remaining checks were not run.";
       run.finishedAt = new Date().toISOString();
-      this.store.saveRun(run);
-      this.current = undefined;
-      complete();
-      if (!this.closing) void this.pump();
+      try {
+        this.store.saveRun(run);
+      } catch {
+        this.faulted = true;
+      } finally {
+        releaseBrowser?.();
+        item.release();
+        this.current = undefined;
+        complete();
+      }
+      if (!this.closing && !this.faulted) void this.pump();
     }
   }
   private async inspect(
@@ -463,6 +545,16 @@ export function reportMarkdown(run: Run) {
           `## ${r.index + 1}. ${clean(r.name)} — ${r.status}\n\nExpected: ${clean(r.expected)}\n\nObserved: ${clean(r.observed)}\n\n${r.steps.map((s, i) => `${i + 1}. ${clean(s)}`).join("\n")}\n\nRecommendation: ${clean(r.recommendation)}\n\nWarnings: ${r.warnings.map(clean).join("; ") || "None recorded"}\n`,
       )
       .join("\n") +
+    (Object.keys(run.review ?? {}).length
+      ? "\n## Review decisions\n\n" +
+        Object.entries(run.review ?? {})
+          .map(
+            ([index, review]) =>
+              `Check ${Number(index) + 1}: ${review.status.replaceAll("_", " ")} by ${clean(review.actor)} at ${review.updatedAt}\n\n${clean(review.note)}\n`,
+          )
+          .join("\n") +
+        "\nReview decisions do not change the original check results.\n"
+      : "") +
     "\nThese bounded browser observations are not a security certification or a complete application audit.\n"
   );
 }

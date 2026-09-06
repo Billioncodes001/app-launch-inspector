@@ -40,3 +40,19 @@ jobs:
             test-results/
           if-no-files-found: ignore
           retention-days: 7
+  container:
+    name: Container sandbox and browser evidence
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t launch-inspector:ci .
+      - name: Inspect real sample applications as a non-root user with Chromium sandbox
+        run: >-
+          docker run --rm --init --read-only --cap-drop ALL
+          --security-opt no-new-privileges=true
+          --security-opt seccomp=deploy/seccomp_profile.json
+          --shm-size=256m --memory=2g --pids-limit=512
+          --tmpfs /tmp:rw,nosuid,nodev,size=512m,mode=1777
+          -v "$PWD/test/container-smoke.mjs:/app/test/container-smoke.mjs:ro"
+          launch-inspector:ci node test/container-smoke.mjs

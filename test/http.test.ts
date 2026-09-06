@@ -83,7 +83,7 @@ test("local API requires session token, exact origin and explicit run authorizat
           body: "x".repeat(256001),
         })
       ).status,
-      400,
+      413,
     );
   } finally {
     await app.close();

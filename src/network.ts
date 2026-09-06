@@ -1,5 +1,6 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { HttpError } from "./errors.js";
 
 export function allowedAddress(address: string) {
   if (address === "::1") return true;
@@ -32,6 +33,7 @@ export function allowedAddress(address: string) {
 export async function targetPolicy(
   origin: string,
   forbiddenPorts: number[] = [],
+  allowLoopback = true,
 ) {
   const url = new URL(origin),
     host = url.hostname.replace(/^\[|\]$/g, "");
@@ -43,35 +45,53 @@ export async function targetPolicy(
     url.search ||
     url.hash
   )
-    throw Error("Use a target origin without credentials or a path");
+    throw new HttpError(
+      400,
+      "Use a target origin without credentials or a path",
+    );
   if (
     forbiddenPorts.includes(
       Number(url.port || (url.protocol === "https:" ? 443 : 80)),
     ) &&
     ["localhost", "127.0.0.1", "::1"].includes(host)
   )
-    throw Error("The inspector cannot inspect its own control server");
+    throw new HttpError(
+      400,
+      "The inspector cannot inspect its own control server",
+    );
   const addresses = isIP(host)
     ? [{ address: host, family: isIP(host) }]
     : await lookup(host, { all: true });
   if (!addresses.length || addresses.some((a) => !allowedAddress(a.address)))
-    throw Error(
+    throw new HttpError(
+      400,
       "Private network, metadata and reserved destinations are not supported. Use a public staging host or a loopback test app.",
     );
   const selected = addresses.find((a) => a.family === 4) ?? addresses[0];
+  if (
+    !allowLoopback &&
+    addresses.some((a) => a.address.startsWith("127.") || a.address === "::1")
+  )
+    throw new HttpError(
+      400,
+      "Hosted inspections cannot target loopback services",
+    );
   if (
     forbiddenPorts.includes(
       Number(url.port || (url.protocol === "https:" ? 443 : 80)),
     ) &&
     (selected.address.startsWith("127.") || selected.address === "::1")
   )
-    throw Error("The inspector cannot inspect its own control server");
+    throw new HttpError(
+      400,
+      "The inspector cannot inspect its own control server",
+    );
   if (
     url.protocol === "http:" &&
     !["127.0.0.1", "::1"].includes(selected.address) &&
     !selected.address.startsWith("127.")
   )
-    throw Error("Public staging targets must use HTTPS");
+    throw new HttpError(400, "Public staging targets must use HTTPS");
   return {
     origin: url.origin,
     resolverRule: isIP(host)
@@ -96,6 +116,6 @@ export function inScope(url: string, origin: string) {
 export function pathUrl(path: string, origin: string) {
   const url = new URL(path, origin);
   if (!inScope(url.href, origin))
-    throw Error("The requested path leaves the authorized target");
+    throw new HttpError(400, "The requested path leaves the authorized target");
   return url.href;
 }

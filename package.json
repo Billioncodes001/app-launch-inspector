@@ -1,11 +1,11 @@
 {
   "name": "app-launch-inspector",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Local browser inspections for login, account permissions and customer journeys",
+  "description": "Organization workspaces for browser inspections, access checks, evidence review and release decisions",
   "engines": {
-    "node": ">=22.12"
+    "node": ">=24.13"
   },
   "scripts": {
     "build": "tsc -p tsconfig.server.json && tsc -p tsconfig.ui.json && vite build",
@@ -13,13 +13,15 @@
     "dev": "tsx watch src/cli.ts",
     "test": "tsx --test --test-concurrency=1 test/*.test.ts",
     "test:ui": "playwright test",
+    "demo:organizations": "tsx test/hosted-ui-server.ts",
     "check": "npm run build && npm test && npm run test:ui"
   },
   "dependencies": {
-    "@fontsource/ibm-plex-sans": "5.2.8",
     "@fontsource/ibm-plex-mono": "5.2.7",
+    "@fontsource/ibm-plex-sans": "5.2.8",
     "lucide-react": "1.41.0",
     "motion": "13.2.0",
+    "openid-client": "6.8.8",
     "playwright": "1.63.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -33,6 +35,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "6.1.1",
+    "jose": "6.2.12",
     "prettier": "3.6.2",
     "tailwindcss": "4.3.3",
     "tsx": "^4.20.0",

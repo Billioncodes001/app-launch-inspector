@@ -85,32 +85,44 @@ test("network policy rejects private destinations, metadata, credentials and its
 });
 test("configuration encryption, secret retention, authentication and interrupted-run recovery", () => {
   const dir = mkdtempSync(join(tmpdir(), "launch-inspector-core-"));
+  const store = new Store(dir);
   try {
-    const store = new Store(dir);
     const publicProject = store.saveProject(
       demoProject("http://127.0.0.1:8787", "broken"),
     );
     assert(
-      !readFileSync(join(dir, "projects.enc"), "utf8").includes(DEMO_PASSWORD),
+      !String(
+        store.database.sql.prepare("SELECT data FROM projects").get()?.data,
+      ).includes(DEMO_PASSWORD),
     );
     assert.equal(publicProject.accounts[0].password, "");
     assert.equal(publicProject.accounts[0].passwordConfigured, true);
     const input = demoProject("http://127.0.0.1:8787", "broken");
     input.accounts.forEach((a) => (a.password = ""));
     store.saveProject(input, publicProject.id);
-    const project = new Store(dir).getProject(publicProject.id);
+    const reopened = new Store(dir);
+    const project = reopened.getProject(publicProject.id);
+    reopened.close();
     assert.equal(project.accounts[0].password, DEMO_PASSWORD);
     const run = store.createRun(project);
     run.status = "running";
     store.saveRun(run);
     store.recover();
     assert.equal(store.getRun(run.id).status, "interrupted");
-    const encoded = JSON.parse(readFileSync(join(dir, "projects.enc"), "utf8"));
+    assert.equal(store.database.verifyAudit("local").valid, true);
+    const encoded = JSON.parse(
+      String(
+        store.database.sql.prepare("SELECT data FROM projects").get()?.data,
+      ),
+    );
     encoded.tag = Buffer.alloc(16).toString("base64");
-    writeFileSync(join(dir, "projects.enc"), JSON.stringify(encoded));
+    store.database.sql
+      .prepare("UPDATE projects SET data=?")
+      .run(JSON.stringify(encoded));
     assert.throws(() => store.listProjects());
     assert.throws(() => store.runDir("../../secrets"));
   } finally {
+    store.close();
     if (dir.startsWith(join(tmpdir(), "launch-inspector-core-")))
       rmSync(dir, { recursive: true, force: true });
   }
