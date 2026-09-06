@@ -423,7 +423,9 @@ function App({
                       <>
                         <code>No target selected</code>
                         <span>
-                          Configure your staging app or try a controlled sample.
+                          {session.mode === "hosted"
+                            ? "Choose a project available to your organization."
+                            : "Configure your staging app or try a controlled sample."}
                         </span>
                       </>
                     )}
@@ -1759,6 +1761,7 @@ function WorkspaceRoot() {
       const id =
         value.organizations.find((o) => o.organizationId === saved)
           ?.organizationId ??
+        value.organizations.find((o) => o.role === "owner")?.organizationId ??
         value.organizations[0]?.organizationId ??
         "";
       setContext(value, id);

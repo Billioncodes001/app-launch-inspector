@@ -51,6 +51,14 @@
 	],
 	"syscalls": [
 		{
+			"comment": "Allow Chromium to chroot inside its own user namespace even when the outer container drops CAP_SYS_CHROOT",
+			"names": ["chroot"],
+			"action": "SCMP_ACT_ALLOW",
+			"args": [],
+			"includes": {},
+			"excludes": {}
+		},
+		{
 			"comment": "Allow create user namespaces",
 			"names": [
 				"clone",
