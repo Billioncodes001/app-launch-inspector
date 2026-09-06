@@ -46,13 +46,41 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Validate hosted deployment configuration
+        run: docker compose config --quiet
+        env:
+          INSPECTOR_DOMAIN: inspector.example.test
+          INSPECTOR_OIDC_ISSUER: https://identity.example.test
+          INSPECTOR_OIDC_CLIENT_ID: synthetic-config-validation
       - run: docker build -t launch-inspector:ci .
-      - name: Inspect real sample applications as a non-root user with Chromium sandbox
+      - name: Start separate sandboxed worker without controller storage or identity secrets
+        run: |
+          docker network create inspector-ci
+          docker run -d --name worker --network inspector-ci --init --read-only --cap-drop ALL \
+            --security-opt no-new-privileges=true --security-opt seccomp=deploy/seccomp_profile.json \
+            --shm-size=256m --memory=2g --pids-limit=512 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=512m,mode=1777 \
+            -e INSPECTOR_WORKER_TOKEN=synthetic-ci-worker-secret-with-32-characters \
+            --health-cmd='node deploy/worker-healthcheck.mjs' --health-interval=2s --health-start-period=10s \
+            -v "$PWD/test/container-worker.mjs:/app/test/container-worker.mjs:ro" \
+            launch-inspector:ci node test/container-worker.mjs
+          for attempt in $(seq 1 30); do
+            if [ "$(docker inspect --format '{{.State.Health.Status}}' worker)" = healthy ]; then exit 0; fi
+            sleep 2
+          done
+          docker logs worker
+          exit 1
+      - name: Transfer actual browser evidence into a separate controller container
         run: >-
-          docker run --rm --init --read-only --cap-drop ALL
+          docker run --rm --network inspector-ci --init --read-only --cap-drop ALL
           --security-opt no-new-privileges=true
           --security-opt seccomp=deploy/seccomp_profile.json
           --shm-size=256m --memory=2g --pids-limit=512
           --tmpfs /tmp:rw,nosuid,nodev,size=512m,mode=1777
+          -e INSPECTOR_WORKER_TOKEN=synthetic-ci-worker-secret-with-32-characters
+          -e INSPECTOR_OIDC_CLIENT_SECRET=controller-only-synthetic-identity-secret
           -v "$PWD/test/container-smoke.mjs:/app/test/container-smoke.mjs:ro"
           launch-inspector:ci node test/container-smoke.mjs
+      - name: Worker logs
+        if: always()
+        run: docker logs worker

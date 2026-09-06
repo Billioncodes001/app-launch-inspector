@@ -217,9 +217,29 @@ export type Run = {
   authorizedAt: string;
   requestedBy?: string;
   review?: Record<string, FindingReview>;
+  hold?: { note: string; actor: string; createdAt: string };
 };
 
 export type Role = "owner" | "editor" | "viewer";
+export type TargetProof = {
+  origin: string;
+  status: "unverified" | "pending" | "verified" | "expired";
+  version: number;
+  value?: string;
+  recordName: string;
+  filePath: string;
+  issuedAt?: string;
+  verifiedUntil?: string;
+};
+export type RetentionPolicy = { days: number; version: number };
+export type RetentionPreview = {
+  token: string;
+  count: number;
+  bytes: number;
+  cutoff: string;
+  examples: Array<{ id: string; projectName: string; createdAt: string }>;
+  held: number;
+};
 export type Actor = { id: string; name: string; email?: string };
 export type Membership = {
   organizationId: string;

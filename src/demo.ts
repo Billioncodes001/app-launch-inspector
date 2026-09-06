@@ -26,6 +26,7 @@ const escape = (s: string) =>
       ]!,
   );
 export async function startDemo(port = 8796) {
+  const verificationRecords = new Set<string>();
   const sessions = new Map<
     string,
     { id: string; name: string; role: string; variant: string }
@@ -54,6 +55,14 @@ export async function startDemo(port = 8796) {
         if (req.headers.host !== new URL(origin).host) {
           res.writeHead(403);
           res.end();
+          return;
+        }
+        if (
+          req.method === "GET" &&
+          req.url === "/.well-known/launch-inspector.txt"
+        ) {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end([...verificationRecords].join("\n"));
           return;
         }
         if (
@@ -206,6 +215,9 @@ export async function startDemo(port = 8796) {
   );
   origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   return {
+    publishVerification(value: string) {
+      verificationRecords.add(value);
+    },
     origin,
     close: () =>
       new Promise<void>((resolve, reject) => {

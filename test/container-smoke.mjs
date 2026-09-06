@@ -4,24 +4,21 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Store } from "../dist/store.js";
 import { Runner } from "../dist/runner.js";
-import { startDemo, demoProject } from "../dist/demo.js";
-import { chromium } from "playwright";
+import { demoProject } from "../dist/demo.js";
 assert.notEqual(process.getuid(), 0, "Container must run as a non-root user");
-// Surface full launch diagnostics in this synthetic fixture before the runner's
-// intentionally bounded, redacted error report is involved.
-const browser = await chromium.launch({
-  channel: "chromium",
-  headless: true,
-  chromiumSandbox: true,
-});
-await browser.close();
 const dir = mkdtempSync(join(tmpdir(), "inspector-container-"));
-const store = new Store(dir),
-  demo = await startDemo(0);
-const runner = new Runner(store, 8795, { sandbox: true, stepTimeoutMs: 1500 });
+const store = new Store(dir);
+const runner = new Runner(store, 8795, {
+  sandbox: true,
+  stepTimeoutMs: 1500,
+  worker: {
+    url: "http://worker:8799",
+    token: process.env.INSPECTOR_WORKER_TOKEN,
+  },
+});
 try {
   for (const mode of ["broken", "fixed"]) {
-    const saved = store.saveProject(demoProject(demo.origin, mode));
+    const saved = store.saveProject(demoProject("http://127.0.0.1:8800", mode));
     const run = await runner.enqueue(store.getProject(saved.id));
     const deadline = Date.now() + 90000;
     let current;
@@ -52,7 +49,6 @@ try {
   }
 } finally {
   await runner.close();
-  await demo.close();
   store.close();
   if (dir.startsWith(join(tmpdir(), "inspector-container-")))
     rmSync(dir, { recursive: true, force: true });

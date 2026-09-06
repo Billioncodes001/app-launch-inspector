@@ -189,7 +189,7 @@ export class Store {
       const old = this.database.sql
         .prepare("SELECT status FROM runs WHERE organization_id=? AND id=?")
         .get(this.organizationId, run.id);
-      const { review: _review, ...data } = run;
+      const { review: _review, hold: _hold, ...data } = run;
       this.database.sql
         .prepare(
           "INSERT INTO runs VALUES(?,?,?,?,?) ON CONFLICT(organization_id,id) DO UPDATE SET status=excluded.status,data=excluded.data",
@@ -228,6 +228,17 @@ export class Store {
       )
       .all(this.organizationId, id))
       run.review[String(v.result_index)] = JSON.parse(String(v.data));
+    const hold = this.database.sql
+      .prepare(
+        "SELECT note,actor,created_at FROM run_holds WHERE organization_id=? AND run_id=?",
+      )
+      .get(this.organizationId, id);
+    if (hold)
+      run.hold = {
+        note: String(hold.note),
+        actor: String(hold.actor),
+        createdAt: String(hold.created_at),
+      };
     return run;
   }
   listRuns(limit = 100): Run[] {

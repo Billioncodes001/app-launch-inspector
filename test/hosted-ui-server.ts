@@ -26,12 +26,21 @@ const a = app.access.createOrganization(
   b = app.access.createOrganization("Harbor Systems", "owner-b@example.test", [
     demo.origin,
   ]);
-const ap = app.store
-  .scope(a.id)
-  .saveProject({
-    ...demoProject(demo.origin, "broken"),
-    name: "Northstar staging",
-  });
+for (const org of [a, b]) {
+  const proof = app.targets.challenge(org.id, demo.origin, 0, localActor);
+  demo.publishVerification(proof.value!);
+  await app.targets.verify(
+    org.id,
+    demo.origin,
+    proof.version,
+    "https",
+    localActor,
+  );
+}
+const ap = app.store.scope(a.id).saveProject({
+  ...demoProject(demo.origin, "broken"),
+  name: "Northstar staging",
+});
 const config = demoProject(demo.origin, "fixed");
 config.checks = [config.checks[0]];
 app.store

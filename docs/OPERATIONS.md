@@ -10,7 +10,7 @@ Graceful shutdown cancels queued/running inspections and closes browsers. After 
 
 ## Health and capacity
 
-`GET /healthz` returns `200` with `{"status":"ready","version":"0.2.0"}` when the lease, database, browser executable and runner storage state are available. It returns `503` when stopping or unhealthy. Requests still require the configured Host header. Health responses contain no company information. The endpoint does not prove that every target, identity-provider request or browser launch will succeed.
+`GET /healthz` returns `200` with `{"status":"ready","version":"0.3.0"}` when the lease, database, browser executable, runner storage state and configured remote worker are available. Worker health is refreshed every 15 seconds; the private worker has its own authenticated `/healthz`. It returns `503` when stopping or unhealthy. Requests still require the configured Host header. Health responses contain no company information. The endpoint does not prove that every target, identity-provider request or browser launch will succeed.
 
 ```sh
 docker compose ps
@@ -94,8 +94,18 @@ For the first upgrade from v0.1, take a filesystem copy of the entire stopped da
 
 ## Retention, privacy and audit
 
-There is no automated record/evidence deletion or encryption-key rotation command yet. Account for all retained data in disk sizing and customer retention agreements. The dashboard's 100-run history limit is a display limit, not deletion. Do not remove database rows or screenshot directories by hand while the service is running. A supported per-company deletion and retention workflow is required before promising automated lifecycle controls.
+Owners manage retention in **Organization controls → Evidence retention** (or **Workspace controls** locally). Choose 7–365 days and explicitly enable automatic cleanup; the default is disabled. The service processes up to 100 eligible finished inspections per organization each minute. Queued/running inspections and reports on hold are excluded. Age is measured from the inspection creation time.
+
+For manual cleanup, preview the count, evidence size and example records, then type DELETE in the confirmation dialog. Previews expire after ten minutes, are scoped to the exact owner and organization, and reject changes or new holds. The first 100 records form a batch; preview again for further batches. Protect a report through its **Evidence retention** control with a reason. Owners can release that hold later.
+
+Run records and reviews are removed transactionally with a durable evidence-cleanup record. File errors keep that cleanup record for retry while API access remains revoked. The UI reports pending file cleanup. Investigate disk permissions and unexpected directory entries if they persist; do not manually manipulate live database rows. Audit events preserve deletion/hold history. Projects, accounts, audit history, external exports and backups are unaffected. Encryption-key rotation is still an operator-managed migration, not a built-in command.
 
 Audit records use a per-organization keyed chain. Verification detects modifications to existing records when the attacker does not possess the root key; it is not immutable storage. A root-key holder can rewrite and resign records, and suffix deletion needs an externally recorded chain head to be detected. Export audit data and chain heads to independently controlled storage when your operating requirements need stronger evidence.
 
 Protect `master.key`, the database/WAL, legacy files, screenshots and snapshots as one sensitive data set. Losing the key loses project-secret recovery. Run the service under a dedicated account; POSIX modes do not replace Windows ACLs or cloud storage permissions.
+
+## Worker operation
+
+Hosted Compose runs one worker service, capped at two concurrent child processes. Each child has a fresh temporary directory, a 256 MB Node heap budget and a 180-second lifetime; Chromium also consumes memory within the worker container's 2 GB limit. Result lines are limited to 17 MB, each screenshot to 3 MB and aggregate streamed evidence to 100 MB per inspection. Cancellation disconnects the worker request and terminates the child process tree. Normal completion and cancellation remove the temporary job directory. An abrupt container termination clears its tmpfs on replacement.
+
+The queue remains in controller memory; this release does not add durable queue replay or horizontal worker scaling. A worker crash produces an incomplete inspection. Restore service health and review the target state before manually starting another run. The worker is not mounted to persistent controller storage. Keep its token private and use HTTPS when running it on another host.

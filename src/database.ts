@@ -31,7 +31,7 @@ export class Database {
     if (this.key.length !== 32) throw Error("Invalid local encryption key");
     this.sql = new DatabaseSync(join(root, "inspector.sqlite"));
     if (
-      Number(this.sql.prepare("PRAGMA user_version").get()?.user_version) > 2
+      Number(this.sql.prepare("PRAGMA user_version").get()?.user_version) > 3
     ) {
       this.sql.close();
       throw Error("This database requires a newer Launch Inspector version");
@@ -51,10 +51,14 @@ export class Database {
       CREATE TABLE IF NOT EXISTS reviews (organization_id TEXT NOT NULL, run_id TEXT NOT NULL, result_index INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY(organization_id,run_id,result_index), FOREIGN KEY(organization_id,run_id) REFERENCES runs(organization_id,id));
       CREATE TABLE IF NOT EXISTS audit (sequence INTEGER PRIMARY KEY AUTOINCREMENT, organization_id TEXT NOT NULL, at TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, resource TEXT NOT NULL, details TEXT NOT NULL, previous_hash TEXT NOT NULL, hash TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS audit_org ON audit(organization_id,sequence DESC);
+      CREATE TABLE IF NOT EXISTS target_proofs (organization_id TEXT NOT NULL, origin TEXT NOT NULL, token TEXT NOT NULL, issued_at TEXT NOT NULL, verified_until TEXT, version INTEGER NOT NULL, PRIMARY KEY(organization_id,origin));
+      CREATE TABLE IF NOT EXISTS retention_policies (organization_id TEXT PRIMARY KEY, days INTEGER NOT NULL, version INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS run_holds (organization_id TEXT NOT NULL, run_id TEXT NOT NULL, note TEXT NOT NULL, actor TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(organization_id,run_id));
+      CREATE TABLE IF NOT EXISTS purge_jobs (organization_id TEXT NOT NULL, run_id TEXT NOT NULL, legacy INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, PRIMARY KEY(organization_id,run_id));
     `);
     try {
       this.importLegacy();
-      this.sql.exec("PRAGMA user_version=2");
+      this.sql.exec("PRAGMA user_version=3");
     } catch (error) {
       this.sql.close();
       throw error;

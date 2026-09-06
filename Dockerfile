@@ -19,6 +19,7 @@ RUN npm ci --omit=dev && npx playwright install --with-deps chromium \
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/ui-dist ./ui-dist
 COPY deploy/healthcheck.mjs ./deploy/healthcheck.mjs
+COPY deploy/worker-healthcheck.mjs ./deploy/worker-healthcheck.mjs
 USER node
 EXPOSE 8795
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

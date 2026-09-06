@@ -52,6 +52,17 @@ async function fixture() {
       "owner-b@example.test",
       [demo.origin],
     );
+  for (const org of [a, b]) {
+    const proof = app.targets.challenge(org.id, demo.origin, 0, localActor);
+    demo.publishVerification(proof.value!);
+    await app.targets.verify(
+      org.id,
+      demo.origin,
+      proof.version,
+      "https",
+      localActor,
+    );
+  }
   const as = app.store.scope(a.id),
     bs = app.store.scope(b.id);
   const config = demoProject(demo.origin, "fixed");
@@ -123,6 +134,16 @@ test("real OIDC sessions isolate companies, enforce project roles and revoke acc
       [ap.id],
     );
     assert.equal(viewState.projects[0].accounts[0].username, "");
+    for (const path of ["/api/targets", "/api/retention"]) {
+      assert.equal(
+        (await fetch(app.origin + path, { headers: viewer.headers })).status,
+        403,
+      );
+      assert.equal(
+        (await fetch(app.origin + path, { headers: editor.headers })).status,
+        403,
+      );
+    }
     const update = async (
       headers: Record<string, string>,
       id: string,
@@ -157,6 +178,28 @@ test("real OIDC sessions isolate companies, enforce project roles and revoke acc
     assert.equal(as.getRun(runId).results[0].status, "passed");
     const ar = as.getRun(runId),
       evidence = ar.results[0].screenshots[0].file;
+    assert.equal(
+      (
+        await fetch(app.origin + "/api/runs/" + runId + "/hold", {
+          method: "PUT",
+          headers: ownerB.headers,
+          body: JSON.stringify({
+            note: "Another company cannot hold this report",
+          }),
+        })
+      ).status,
+      404,
+    );
+    assert.equal(
+      (
+        await fetch(app.origin + "/api/runs/" + runId + "/hold", {
+          method: "PUT",
+          headers: viewer.headers,
+          body: JSON.stringify({ note: "A viewer cannot add retention holds" }),
+        })
+      ).status,
+      403,
+    );
     for (const suffix of ["", "/export?format=json", "/evidence/" + evidence])
       assert.equal(
         (

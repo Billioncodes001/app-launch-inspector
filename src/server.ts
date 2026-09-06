@@ -23,6 +23,12 @@ import { localActor } from "./database.js";
 import { BrowserCapacity } from "./capacity.js";
 import { HttpError } from "./errors.js";
 import { acquireLease } from "./operations.js";
+import { Targets } from "./targets.js";
+import { Retention } from "./retention.js";
+import {
+  validateWorkerConnection,
+  type WorkerConnection,
+} from "./worker-client.js";
 
 async function jsonBody(req: IncomingMessage) {
   if (!req.headers["content-type"]?.startsWith("application/json"))
@@ -68,6 +74,7 @@ export async function startServer(options: {
   oidc?: OidcSettings;
   allowLoopbackTargetsForTests?: boolean;
   browserSandbox?: boolean;
+  worker?: WorkerConnection;
 }) {
   const hosted = options.mode === "hosted",
     host = options.host ?? "127.0.0.1";
@@ -75,6 +82,9 @@ export async function startServer(options: {
     throw Error("Local mode must bind to 127.0.0.1");
   if (hosted && (!options.oidc || !options.publicOrigin))
     throw Error("Hosted mode requires a public origin and OIDC settings");
+  if (hosted && !options.worker && !options.allowLoopbackTargetsForTests)
+    throw Error("Hosted mode requires a separate inspection worker");
+  if (options.worker) validateWorkerConnection(options.worker);
   if (options.publicOrigin) {
     const url = new URL(options.publicOrigin);
     if (
@@ -89,6 +99,23 @@ export async function startServer(options: {
   const store = new Store(options.dataDir),
     access = new Access(store.database),
     capacity = new BrowserCapacity(2, 20);
+  const targets = new Targets(access, options.allowLoopbackTargetsForTests),
+    retention = new Retention(store);
+  let workerReady = !options.worker;
+  const checkWorker = async () => {
+    if (!options.worker) return;
+    try {
+      const response = await fetch(options.worker.url + "/healthz", {
+        headers: { Authorization: "Bearer " + options.worker.token },
+        signal: AbortSignal.timeout(3000),
+        redirect: "error",
+      });
+      workerReady = response.ok;
+      await response.body?.cancel();
+    } catch {
+      workerReady = false;
+    }
+  };
   let stopOnLeaseLost = () => {};
   let lease: ReturnType<typeof acquireLease>;
   try {
@@ -109,6 +136,7 @@ export async function startServer(options: {
       token,
     );
     await auth?.initialize();
+    await checkWorker();
     if (!lease.active)
       throw Error("The data directory lease was lost during startup");
   } catch (error) {
@@ -161,9 +189,11 @@ export async function startServer(options: {
           capacity,
           allowLoopback,
           sandbox: options.browserSandbox ?? hosted,
+          worker: options.worker,
           authorize: (p, actor) => {
             checkTarget(org, p.baseUrl);
             if (hosted) {
+              targets.assertVerified(org, p.baseUrl);
               const m = access.member(actor, org);
               access.assertWrite(m);
               access.assertProject(m, p.id);
@@ -224,12 +254,13 @@ export async function startServer(options: {
         const ready =
           !stopping &&
           lease.active &&
+          workerReady &&
           existsSync(chromium.executablePath()) &&
           [...runners.values()].every((r) => r.healthy);
         store.database.sql.prepare("SELECT 1").get();
         send(ready ? 200 : 503, {
           status: ready ? "ready" : "unavailable",
-          version: "0.2.0",
+          version: "0.3.0",
         });
         return;
       }
@@ -331,10 +362,20 @@ export async function startServer(options: {
               runs: scoped
                 .listRuns()
                 .filter((r) => access.canProject(member, r.projectId)),
-              version: "0.2.0",
+              version: "0.3.0",
               demoOrigin: hosted ? "" : options.demoOrigin,
               organization: member,
               approvedOrigins: hosted ? access.organization(org).origins : [],
+              verifiedOrigins: hosted
+                ? targets
+                    .list(org)
+                    .filter((p) => p.status === "verified")
+                    .map((p) => p.origin)
+                : [],
+              execution: {
+                mode: options.worker ? "remote" : "process",
+                ready: workerReady,
+              },
               permissions: {
                 canWrite: member.role !== "viewer",
                 canCreate:
@@ -343,6 +384,103 @@ export async function startServer(options: {
                 canAcceptRisk: member.role === "owner",
               },
             });
+            return;
+          }
+          if (path === "/api/targets" && req.method === "GET") {
+            access.assertOwner(member);
+            send(200, hosted ? targets.list(org) : []);
+            return;
+          }
+          if (
+            ["/api/targets/challenge", "/api/targets/verify"].includes(path) &&
+            req.method === "POST"
+          ) {
+            access.assertOwner(member);
+            if (!hosted)
+              throw new HttpError(
+                400,
+                "Local targets do not require ownership verification",
+              );
+            const input = z
+              .object({
+                origin: z.string().url(),
+                version: z.number().int().min(0),
+                method: z.enum(["https", "dns"]).optional(),
+              })
+              .strict()
+              .parse(await jsonBody(req));
+            if (path.endsWith("challenge"))
+              send(
+                200,
+                targets.challenge(org, input.origin, input.version, actor),
+              );
+            else
+              send(
+                200,
+                await targets.verify(
+                  org,
+                  input.origin,
+                  input.version,
+                  input.method ?? "https",
+                  actor,
+                  () => access.assertOwner(access.member(actor, org)),
+                ),
+              );
+            return;
+          }
+          if (path === "/api/retention" && req.method === "GET") {
+            access.assertOwner(member);
+            send(200, {
+              policy: retention.policy(org),
+              pendingFiles: retention.pending(org),
+            });
+            return;
+          }
+          if (path === "/api/retention" && req.method === "PUT") {
+            access.assertOwner(member);
+            const input = z
+              .object({
+                days: z.number().int(),
+                version: z.number().int().min(0),
+              })
+              .strict()
+              .parse(await jsonBody(req));
+            send(
+              200,
+              retention.savePolicy(org, input.days, input.version, actor),
+            );
+            return;
+          }
+          if (path === "/api/retention/preview" && req.method === "POST") {
+            access.assertOwner(member);
+            const input = z
+              .object({ days: z.number().int() })
+              .strict()
+              .parse(await jsonBody(req));
+            send(200, retention.preview(org, input.days, actor));
+            return;
+          }
+          if (path === "/api/retention/purge" && req.method === "POST") {
+            access.assertOwner(member);
+            const input = z
+              .object({
+                token: z.string().max(40000),
+                confirm: z.literal("DELETE"),
+              })
+              .strict()
+              .parse(await jsonBody(req));
+            send(200, retention.execute(org, input.token, actor));
+            return;
+          }
+          const hold = path.match(/^\/api\/runs\/([^/]+)\/hold$/);
+          if (hold && req.method === "PUT") {
+            access.assertOwner(member);
+            const input = z
+              .object({ note: z.string().trim().min(10).max(300).nullable() })
+              .strict()
+              .parse(await jsonBody(req));
+            retention.hold(org, hold[1], input.note, actor);
+            send(200, scoped.getRun(hold[1]));
             return;
           }
           if (path === "/api/members") {
@@ -492,6 +630,11 @@ export async function startServer(options: {
                 409,
                 "This configuration changed. Review the latest version and authorize it again.",
               );
+            if (!workerReady)
+              throw new HttpError(
+                503,
+                "The inspection worker is unavailable. Try again after the operator restores it.",
+              );
             send(202, await runnerFor(org).enqueue(p, actor));
             return;
           }
@@ -581,7 +724,11 @@ export async function startServer(options: {
         send(200, index, "text/html; charset=utf-8");
         return;
       }
-      if (!/^\/(assets\/[A-Za-z0-9_.-]+|mark\.svg)$/.test(path))
+      if (
+        !/^\/(assets\/[A-Za-z0-9_.-]+|images\/release-workspace\.webp|mark\.svg)$/.test(
+          path,
+        )
+      )
         throw new HttpError(404, "Asset not found");
       const types: Record<string, string> = {
         ".js": "text/javascript",
@@ -589,6 +736,7 @@ export async function startServer(options: {
         ".svg": "image/svg+xml",
         ".woff2": "font/woff2",
         ".woff": "font/woff",
+        ".webp": "image/webp",
       };
       send(
         200,
@@ -639,10 +787,17 @@ export async function startServer(options: {
   }
   const port = (server.address() as AddressInfo).port;
   origin ||= `http://127.0.0.1:${port}`;
+  const maintenanceTimer = setInterval(() => retention.sweep(), 60000);
+  maintenanceTimer.unref();
+  const workerTimer = setInterval(() => void checkWorker(), 15000);
+  workerTimer.unref();
+  retention.cleanup();
   let closing: Promise<void> | undefined;
   const close = () =>
     (closing ??= (async () => {
       stopping = true;
+      clearInterval(maintenanceTimer);
+      clearInterval(workerTimer);
       try {
         await Promise.all([...runners.values()].map((r) => r.close()));
         await new Promise<void>((resolve, reject) => {
@@ -661,6 +816,8 @@ export async function startServer(options: {
     origin,
     store,
     access,
+    targets,
+    retention,
     capacity,
     get runner() {
       return runnerFor("local");

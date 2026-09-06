@@ -1,5 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem("inspector-welcome-seen", "true"),
+  );
+});
 test.use({ baseURL: "http://127.0.0.1:8798" });
 async function login(page: Page, email = "owner-a@example.test") {
   await page.goto("/");

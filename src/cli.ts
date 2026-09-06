@@ -8,6 +8,7 @@ import { startServer } from "./server.js";
 import { Store } from "./store.js";
 import { Access } from "./access.js";
 import { targetPolicy } from "./network.js";
+import { startWorker } from "./worker-server.js";
 import {
   acquireLease,
   createBackup,
@@ -28,11 +29,16 @@ async function main() {
     },
   });
   const command = positionals[0] ?? "serve";
+  const workerToken = () =>
+    process.env.INSPECTOR_WORKER_TOKEN_FILE
+      ? readFileSync(process.env.INSPECTOR_WORKER_TOKEN_FILE, "utf8").trim()
+      : (process.env.INSPECTOR_WORKER_TOKEN ?? "");
   if (values.help) {
-    console.log(`Launch Inspector 0.2.0
+    console.log(`Launch Inspector 0.3.0
 
 node dist/cli.js                       Start local or hosted mode
 node dist/cli.js doctor                Check runtime prerequisites
+node dist/cli.js worker                Start the authenticated browser worker
 node dist/cli.js org-create --name NAME --owner EMAIL --target HTTPS_ORIGIN
 node dist/cli.js org-list              List provisioned organizations
 node dist/cli.js backup --output NEW_DIRECTORY
@@ -45,9 +51,29 @@ INSPECTOR_DATA_DIR defaults to ~/.app-launch-inspector.
 
 Hosted mode requires INSPECTOR_PUBLIC_URL (HTTPS), INSPECTOR_OIDC_ISSUER,
 INSPECTOR_OIDC_CLIENT_ID and INSPECTOR_OIDC_CLIENT_SECRET or its _FILE variant.
+Also set INSPECTOR_WORKER_URL and INSPECTOR_WORKER_TOKEN_FILE on the controller.
+The worker uses the same token file, INSPECTOR_WORKER_HOST and optional PORT.
 INSPECTOR_HOST defaults to 127.0.0.1. Use a trusted TLS reverse proxy for hosting.
 Stop the service before organization provisioning, backup or restore.
 See docs/HOSTING.md for deployment and docs/OPERATIONS.md for recovery.`);
+    return;
+  }
+  if (command === "worker") {
+    const port = Number(process.env.INSPECTOR_WORKER_PORT ?? 8799);
+    if (!Number.isInteger(port) || port < 1024 || port > 65535)
+      throw Error("Choose a worker port from 1024 to 65535");
+    const worker = await startWorker({
+      token: workerToken(),
+      host: process.env.INSPECTOR_WORKER_HOST ?? "127.0.0.1",
+      port,
+    });
+    console.log("Inspection worker is listening on port " + port);
+    const stop = async () => {
+      await worker.close();
+      process.exit(0);
+    };
+    process.on("SIGTERM", () => void stop());
+    process.on("SIGINT", () => void stop());
     return;
   }
   const dataDir = resolve(
@@ -151,6 +177,16 @@ See docs/HOSTING.md for deployment and docs/OPERATIONS.md for recovery.`);
       },
       { name: "Chromium installed", ok: existsSync(chromium.executablePath()) },
       {
+        name: "Built inspection worker",
+        ok: existsSync(resolve("dist/worker-child.js")),
+      },
+      {
+        name: "Hosted worker settings",
+        ok:
+          !hosted ||
+          !!(process.env.INSPECTOR_WORKER_URL && workerToken().length >= 32),
+      },
+      {
         name: "Hosted identity settings",
         ok:
           !hosted ||
@@ -193,6 +229,9 @@ See docs/HOSTING.md for deployment and docs/OPERATIONS.md for recovery.`);
       host: process.env.INSPECTOR_HOST ?? "127.0.0.1",
       publicOrigin: process.env.INSPECTOR_PUBLIC_URL,
       oidc: settings,
+      worker: process.env.INSPECTOR_WORKER_URL
+        ? { url: process.env.INSPECTOR_WORKER_URL, token: workerToken() }
+        : undefined,
     });
     console.log(
       `Launch Inspector: ${app.origin}\nMode: ${mode}${demo ? "\nControlled sample app: " + demo.origin : ""}`,

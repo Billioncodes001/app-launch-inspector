@@ -1,4 +1,16 @@
 import React, { useEffect, useId, useRef, useState } from "react";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+} from "@tanstack/react-query";
+import { Onboarding, WorkspacePhoto } from "./onboarding";
+import { HoldControl } from "./controls";
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { retry: 1, staleTime: 1000, refetchOnWindowFocus: true },
+  },
+});
 import { createRoot } from "react-dom/client";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
@@ -136,24 +148,29 @@ function App({
   onSwitch: (id: string) => void;
   onSignOut: () => void;
 }) {
-  const [state, setState] = useState<{
+  type WorkspaceState = {
     projects: PublicProject[];
     runs: Run[];
     version: string;
     organization: Membership;
     approvedOrigins: string[];
+    verifiedOrigins: string[];
+    execution: { mode: string; ready: boolean };
     permissions: {
       canWrite: boolean;
       canCreate: boolean;
       canManage: boolean;
       canAcceptRisk: boolean;
     };
-  }>({
+  };
+  const initialState: WorkspaceState = {
     projects: [],
     runs: [],
-    version: "0.2.0",
+    version: "0.3.0",
     organization,
     approvedOrigins: [],
+    verifiedOrigins: [],
+    execution: { mode: "process", ready: false },
     permissions: {
       canWrite: organization.role !== "viewer",
       canCreate:
@@ -161,7 +178,19 @@ function App({
       canManage: organization.role === "owner",
       canAcceptRisk: organization.role === "owner",
     },
+  };
+  const query = useQuery({
+    queryKey: ["workspace", organization.organizationId, session.user?.id],
+    queryFn: ({ signal }) =>
+      request<WorkspaceState>("/state", "GET", undefined, {}, signal),
+    refetchInterval: (q) =>
+      q.state.data?.runs.some((r) => ["queued", "running"].includes(r.status))
+        ? 1500
+        : 15000,
+    refetchIntervalInBackground: false,
   });
+  const state = query.data ?? initialState,
+    loaded = !query.isPending;
   const { canWrite, canCreate, canManage, canAcceptRisk } = state.permissions;
   const hosted = session.mode === "hosted";
   const storagePrefix = "inspector-" + organization.organizationId + "-";
@@ -175,31 +204,34 @@ function App({
         localStorage.getItem(storagePrefix + "run") ??
         (hosted ? "" : (localStorage.getItem("inspector-run") ?? "")),
     ),
-    [view, setView] = useState<"workbench" | "setup" | "governance">(
-      "workbench",
+    [view, setView] = useState<
+      "workbench" | "setup" | "governance" | "welcome"
+    >(
+      localStorage.getItem("inspector-welcome-seen") ||
+        localStorage.getItem(storagePrefix + "welcome")
+        ? "workbench"
+        : "welcome",
     );
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(""),
-    [loaded, setLoaded] = useState(false),
     [authorized, setAuthorized] = useState(false),
     [editing, setEditing] = useState<PublicProject | undefined>();
   const reduced = useReducedMotion();
   async function refresh() {
-    try {
-      const data = await request<typeof state>("/state");
-      setState(data);
-      setLoaded(true);
-      return data;
-    } catch (e) {
-      setError((e as Error).message);
-      setLoaded(true);
-    }
+    const result = await query.refetch();
+    if (result.error) setError(result.error.message);
+    return result.data;
   }
   useEffect(() => {
+    if (query.error) setError(query.error.message);
+  }, [query.error]);
+  function finishWelcome(p?: PublicProject, r?: Run) {
+    localStorage.setItem(storagePrefix + "welcome", "true");
+    if (p) setSelected(p.id);
+    if (r) setRunId(r.id);
+    setView("workbench");
     void refresh();
-    const interval = setInterval(() => void refresh(), 1500);
-    return () => clearInterval(interval);
-  }, []);
+  }
   useEffect(() => {
     localStorage.setItem(storagePrefix + "project", selected);
     localStorage.setItem(storagePrefix + "run", runId);
@@ -255,6 +287,9 @@ function App({
           Launch Inspector<span>LAB / 01</span>
         </a>
         <div className="header-right">
+          <button className="text-button" onClick={() => setView("welcome")}>
+            Getting started
+          </button>
           {hosted && (
             <>
               <label className="organization-switch">
@@ -300,25 +335,29 @@ function App({
           <div>
             <p className="eyebrow">SHIP WITH EVIDENCE</p>
             <h1>
-              {view === "governance"
-                ? "Workspace governance"
-                : view === "setup"
-                  ? "Configure an inspection"
-                  : "Inspection workbench"}
+              {view === "welcome"
+                ? "The release field guide"
+                : view === "governance"
+                  ? "Workspace governance"
+                  : view === "setup"
+                    ? "Configure an inspection"
+                    : "Inspection workbench"}
             </h1>
             <p>
-              {view === "governance"
-                ? "Manage access and review the history behind inspection decisions."
-                : view === "setup"
-                  ? "Define your target, test accounts and the behavior you expect."
-                  : "Test the paths your customers depend on. Keep the proof."}
+              {view === "welcome"
+                ? "A focused path from setup to your first inspection."
+                : view === "governance"
+                  ? "Manage access and review the history behind inspection decisions."
+                  : view === "setup"
+                    ? "Define your target, test accounts and the behavior you expect."
+                    : "Test the paths your customers depend on. Keep the proof."}
             </p>
           </div>
           <div className="heading-actions">
             {view !== "workbench" ? (
               <button
                 className="button secondary"
-                onClick={() => setView("workbench")}
+                onClick={() => finishWelcome()}
               >
                 Back to workbench
               </button>
@@ -361,7 +400,22 @@ function App({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.16 }}
           >
-            {view === "governance" && canManage ? (
+            {view === "welcome" ? (
+              <Onboarding
+                hosted={hosted}
+                canCreate={canCreate}
+                origins={state.approvedOrigins}
+                verified={state.verifiedOrigins}
+                workerReady={state.execution.ready}
+                defaults={emptyProject}
+                onDone={finishWelcome}
+                onSample={async () => {
+                  await sample("fixed");
+                  localStorage.setItem(storagePrefix + "welcome", "true");
+                }}
+                onControls={canManage ? () => setView("governance") : undefined}
+              />
+            ) : view === "governance" && canManage ? (
               <Governance
                 hosted={hosted}
                 organization={state.organization}
@@ -541,6 +595,7 @@ function App({
                   >
                     {run ? (
                       <RunView
+                        onRefresh={refresh}
                         run={run}
                         onCancel={() =>
                           act("cancel", async () => {
@@ -672,9 +727,11 @@ function App({
             review.
           </span>
           <span>
-            {active.length
-              ? `${active.length} inspection${active.length === 1 ? "" : "s"} in progress`
-              : "Runner ready"}
+            {!state.execution.ready
+              ? "Worker unavailable"
+              : active.length
+                ? `${active.length} inspection${active.length === 1 ? "" : "s"} in progress`
+                : "Runner ready"}
             <i className={active.length ? "busy-dot" : ""} />
           </span>
         </footer>
@@ -683,6 +740,7 @@ function App({
   );
 }
 function RunView({
+  onRefresh,
   run,
   onCancel,
   onDownload,
@@ -692,6 +750,7 @@ function RunView({
   onReview,
 }: {
   run: Run;
+  onRefresh: () => Promise<unknown>;
   onCancel: () => void;
   onDownload: (format: string) => void;
   busy: boolean;
@@ -733,6 +792,9 @@ function RunView({
           : "Configured checks passed";
   return (
     <>
+      {!running && canAcceptRisk && (
+        <HoldControl key={run.id} run={run} onChange={onRefresh} />
+      )}
       <div className="report-heading">
         <div>
           <div className="report-eyebrow">
@@ -1774,6 +1836,7 @@ function WorkspaceRoot() {
   useEffect(() => {
     void load();
     const expire = () => {
+      queryClient.clear();
       setSession(undefined);
       void load();
     };
@@ -1791,6 +1854,7 @@ function WorkspaceRoot() {
         session={session}
         organization={organization}
         onSwitch={(id) => {
+          queryClient.clear();
           setContext(session, id);
           localStorage.setItem("inspector-organization", id);
           setOrganizationId(id);
@@ -1798,6 +1862,7 @@ function WorkspaceRoot() {
         onSignOut={() => {
           void request("/logout", "POST", {})
             .then(() => {
+              queryClient.clear();
               setSession(undefined);
               return load();
             })
@@ -1811,56 +1876,63 @@ function WorkspaceRoot() {
         <img src="/mark.svg" alt="" />
         Launch Inspector
       </div>
-      <section className="signin-card">
-        <p className="eyebrow">THE ORGANIZATION WORKSPACE</p>
-        <h1>Your release checkpoint.</h1>
-        <p>
-          Inspect critical application flows, review the evidence, and keep a
-          clear record of every release decision.
-        </p>
-        {error ? (
-          <div role="alert" className="alert">
-            {error}
-            <button
-              className="text-button"
-              onClick={() => {
-                setError("");
-                void load();
-              }}
-            >
-              Try again
-            </button>
-          </div>
-        ) : !session ? (
+      <div className="signin-layout">
+        <WorkspacePhoto />
+        <section className="signin-card">
+          <p className="eyebrow">THE ORGANIZATION WORKSPACE</p>
+          <h1>Your release checkpoint.</h1>
           <p>
-            <LoaderCircle className="spin" size={20} />
-            Connecting to your workspace…
+            Inspect critical application flows, review the evidence, and keep a
+            clear record of every release decision.
           </p>
-        ) : (
-          <>
-            <a className="button" href="/auth/login">
-              <LockKeyhole size={17} />
-              Sign in with your work account
-              <ArrowRight size={17} />
-            </a>
-            <p className="signin-note">
-              Access is managed by your organization owner. Use the verified
-              email address approved for your membership.
+          {error ? (
+            <div role="alert" className="alert">
+              {error}
+              <button
+                className="text-button"
+                onClick={() => {
+                  setError("");
+                  void load();
+                }}
+              >
+                Try again
+              </button>
+            </div>
+          ) : !session ? (
+            <p>
+              <LoaderCircle className="spin" size={20} />
+              Connecting to your workspace…
             </p>
-          </>
-        )}
-        <div className="signin-assurance">
-          <ShieldCheck size={20} />
-          <div>
-            <strong>Separate organizations. Explicit access.</strong>
-            <span>
-              Projects, test credentials and evidence are scoped to your
-              organization.
-            </span>
+          ) : (
+            <>
+              <a className="button" href="/auth/login">
+                <LockKeyhole size={17} />
+                Sign in with your work account
+                <ArrowRight size={17} />
+              </a>
+              <p className="signin-note">
+                Access is managed by your organization owner. Use the verified
+                email address approved for your membership.
+              </p>
+            </>
+          )}
+          <div className="signin-assurance">
+            <ShieldCheck size={20} />
+            <div>
+              <strong>Separate organizations. Explicit access.</strong>
+              <span>
+                Projects, test credentials and evidence are scoped to your
+                organization.
+              </span>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
     </main>
   );
 }
-createRoot(document.getElementById("root")!).render(<WorkspaceRoot />);
+createRoot(document.getElementById("root")!).render(
+  <QueryClientProvider client={queryClient}>
+    <WorkspaceRoot />
+  </QueryClientProvider>,
+);

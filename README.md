@@ -4,7 +4,9 @@
 
 Launch Inspector checks login, account permissions and customer journeys against a running web application. It uses real Chromium sessions, records screenshots and reproduction steps, and gives teams a shared place to review the findings before release.
 
-Version **0.2.0** adds a hosted service mode for multiple companies: OpenID Connect sign-in, organization and project permissions, review decisions, audit history, transactional storage and tested recovery tools. Local mode remains available for individual developers. This is a working hosted pilot; production readiness still depends on your infrastructure, identity provider, operating procedures and independent security review.
+Version **0.3.0** adds separate authenticated browser workers, expiring target ownership verification, evidence retention with protected reports, and a guided first-inspection flow. Hosted workspaces include OpenID Connect sign-in, project permissions, review decisions, audit history and tested recovery tools. Local mode remains available for individual developers. This is a working hosted pilot; production readiness still depends on your infrastructure, identity provider, operating procedures and independent security review.
+
+![Guided first-inspection setup](docs/onboarding.png)
 
 ![Launch Inspector inspecting a deliberately faulty sample application](docs/workbench.png)
 
@@ -30,7 +32,7 @@ Checks are explicit assertions. The current release does not use an AI model, an
 | Account permissions | An anonymous visitor, member or second customer cannot see a protected marker             | Authorized baseline, followed by an isolated restricted session |
 | Journey             | Edit a profile, save, reload and verify persistence                                       | Navigation, form actions and visible-text assertions            |
 
-The dashboard supports saved targets, test accounts, run history, cancellation, evidence dialogs, Markdown/JSON exports and review notes. Review decisions keep the original observed result unchanged: accepting a risk never converts a failed check into a pass.
+The dashboard includes a guided onboarding screen and supports saved targets, test accounts, run history, cancellation, evidence dialogs, Markdown/JSON exports and review notes. Review decisions keep the original observed result unchanged: accepting a risk never converts a failed check into a pass.
 
 ### Organization controls
 
@@ -39,6 +41,9 @@ The dashboard supports saved targets, test accounts, run history, cancellation, 
 - **Roles:** owners manage membership and accept risk; editors configure and run assigned targets; viewers review assigned evidence. A member can belong to more than one organization with different roles.
 - **Change control:** configuration, membership and finding reviews use revision checks to reject stale updates.
 - **Traceability:** per-organization audit records include sign-ins, access changes, configuration saves, run events, exports and review decisions, with keyed integrity verification.
+- **Target ownership:** operator-approved origins require a company-specific DNS or HTTPS proof, valid for 30 days and checked again before execution.
+- **Evidence lifecycle:** owner-controlled cleanup policies, expiring previews, explicit manual deletion and per-report retention holds. Cleanup is disabled by default.
+- **Execution:** hosted browsers run in a separate worker container without the controller data volume or identity secret. Each inspection uses a disposable child process and temporary directory.
 - **Operations:** SQLite WAL transactions, scoped AES-256-GCM configuration encryption, bounded browser capacity, health checks, service exclusivity, backup verification and restore with session revocation.
 
 ![Organization audit history and review decisions](docs/organizations.png)
@@ -87,15 +92,16 @@ The repository includes a Docker image, Compose deployment and Caddy TLS reverse
 
 Follow **[Hosting and customer onboarding](docs/HOSTING.md)** for the complete setup, environment variables and role model. Follow **[Operations and recovery](docs/OPERATIONS.md)** for health checks, backups, restore, upgrade and capacity planning. Read **[Security boundaries](docs/SECURITY.md)** before a customer pilot.
 
-The supported topology is **one service instance on one host with persistent local storage**, serving multiple logically isolated organizations. It is not a horizontally scalable or highly available deployment. Use a dedicated host and network egress controls for customer browser workloads.
+The supported topology is **one controller plus one worker service on a dedicated host with persistent controller storage**, serving multiple logically isolated organizations. It is not a horizontally scalable or highly available deployment. Use a dedicated host and network egress controls for customer browser workloads.
 
 ## Configure an inspection
 
-1. Select **New target**. Enter an origin such as `https://staging.example.com`; hosted targets must already be approved for the organization.
-2. Configure the login path, exact accessible field labels, button name, successful path and visible success text. Provide the rejection message if testing an invalid password.
-3. Add disposable test accounts with stable IDs, such as `owner`, `member` and `customer-two`.
-4. Add page, login, permission or journey checks. Every journey needs at least one visible-text assertion.
-5. Save the target, acknowledge authorization to exercise it, and run the inspection.
+1. Use **Getting started** for a guided first page check, or select **New target** for the full editor. Hosted owners first open **Organization controls → Verified targets** to publish and verify a DNS record or HTTPS file. Verification expires after 30 days.
+2. In the full editor, Enter an origin such as `https://staging.example.com`; hosted targets must already be approved for the organization.
+3. Configure the login path, exact accessible field labels, button name, successful path and visible success text. Provide the rejection message if testing an invalid password.
+4. Add disposable test accounts with stable IDs, such as `owner`, `member` and `customer-two`.
+5. Add page, login, permission or journey checks. Every journey needs at least one visible-text assertion.
+6. Save the target, acknowledge authorization to exercise it, and run the inspection.
 
 The authorized account must first see the protected marker before a permission check tests a restricted account. A failed baseline cannot produce a passing permission result. Choose a specific marker, such as a protected document title, rather than a generic navigation label. This checks rendered content; it does not examine every response body for hidden data.
 
@@ -134,7 +140,7 @@ By default, data lives in `~/.app-launch-inspector`, outside this repository:
 
 Version 0.1 data is imported transactionally into the local workspace on first startup. Legacy files are preserved. Back up the complete data directory before upgrading; use the new backup CLI for subsequent snapshots.
 
-Configuration is encrypted with organization/project-scoped keys. **Reports, screenshots and identity metadata are not encrypted by the application.** Use encrypted storage and backups, restrictive filesystem access and synthetic accounts. Screenshots mask input fields and marked private elements, but other visible customer data can still appear. There is no automatic retention deletion yet; the UI lists the latest 100 runs while older records remain stored.
+Configuration is encrypted with organization/project-scoped keys. **Reports, screenshots and identity metadata are not encrypted by the application.** Use encrypted storage and backups, restrictive filesystem access and synthetic accounts. Screenshots mask input fields and marked private elements, but other visible customer data can still appear. Owners can configure **Organization controls → Evidence retention** for 7–365 days, or keep automatic cleanup disabled. Preview and confirm a manual cleanup before deletion; protect important reports with **Evidence retention → Protect evidence** in the report. Cleanup removes finished run records, reviews and screenshots, preserving projects and audit history. External backups need separate lifecycle management. The UI lists the latest 100 runs.
 
 No report or credential is sent to an AI or analytics service. Checks necessarily send credentials and configured actions to the inspected application. Hosted sign-in communicates with your identity provider. See the security and operations guides for the full boundaries.
 
@@ -144,21 +150,24 @@ No report or credential is sent to an AI or analytics service. Checks necessaril
 npm run check
 ```
 
-This builds the server and React UI, runs 15 backend/integration tests, then 9 dashboard browser tests. Ports **8797** and **8798** must be free. Stop the organization demo first. All fixtures use temporary data and synthetic accounts.
+This builds the server and React UI, runs the backend/integration suite, then the dashboard browser suite. Ports **8797** and **8798** must be free. Stop the organization demo first. All fixtures use temporary data and synthetic accounts.
 
 - Actual browser runs demonstrate four seeded failures and six passing checks after correction.
 - Hosted tests exercise signed OIDC responses, callback replay, invalid signatures and claims, session expiry, membership revocation and cross-company/project access attempts.
 - Operations tests restore configuration and evidence, revoke restored sessions, reject damaged backups and prevent competing service instances.
+- Worker and lifecycle tests exercise real remote browser evidence, cancellation, incomplete responses, ownership expiration, stale proofs, tenant-scoped cleanup, holds and cleanup retry.
 - UI tests exercise sign-in, organization switching, roles, member changes, finding review, exports, keyboard interactions, mobile layouts and automated accessibility checks.
-- [CI](.github/workflows/ci.yml) runs on Windows and Ubuntu and additionally executes real browser inspections in a non-root Docker container with Chromium's sandbox enabled.
+- [CI](.github/workflows/ci.yml) runs on Windows and Ubuntu and additionally executes real browser inspections across separate non-root controller and worker containers, with Chromium's sandbox enabled.
 
 Screenshots and traces are written to ignored `artifacts/` and `test-results/` directories. Controlled tests establish behavior for these scenarios; customer infrastructure and identity-provider pilots remain necessary.
 
-For backend development, build once, stop the existing server and run `npm run dev`. UI changes need a new build and server restart. The interface uses React 19, TypeScript, Tailwind CSS 4, Motion, Lucide and locally bundled IBM Plex fonts.
+For backend development, build once, stop the existing server and run `npm run dev`. UI changes need a new build and server restart. The interface uses React 19, TypeScript, Tailwind CSS 4, Motion, Lucide, TanStack Query for adaptive polling, Radix Dialog for keyboard-accessible confirmations and locally bundled IBM Plex fonts. The engineering photograph is by [Ilya Pavlov on Unsplash](https://unsplash.com/photos/monitor-showing-java-programming-OqtafYT5kTw), used under the [Unsplash License](https://unsplash.com/license); attribution is bundled with the image.
 
 | Source                              | Responsibility                                                         |
 | ----------------------------------- | ---------------------------------------------------------------------- |
-| `src/runner.ts`, `src/network.ts`   | Browser checks, target restrictions, screenshots and report generation |
+| `src/runner.ts`, `src/browser-engine.ts`, `src/network.ts` | Queue orchestration, browser checks, network restrictions and reports |
+| `src/worker-*.ts` | Authenticated worker protocol, child processes and evidence transfer |
+| `src/targets.ts`, `src/retention.ts` | Ownership proofs, retention policies, holds and durable file cleanup |
 | `src/access.ts`, `src/auth.ts`      | Organization permissions and OpenID Connect sessions                   |
 | `src/database.ts`, `src/store.ts`   | Transactions, scoped encryption, records and audit integrity           |
 | `src/operations.ts`, `src/cli.ts`   | Single-instance lease, backup, restore and operator commands           |
@@ -166,4 +175,4 @@ For backend development, build once, stop the existing server and run `npm run d
 | `ui/src/`                           | Workbench, configuration, organization administration and review       |
 | `test/`                             | Integration tests, browser tests and synthetic identity provider       |
 
-The next commercial milestones are external customer pilots, infrastructure isolation review, retention automation, service observability, enterprise identity lifecycle integrations and a durable worker architecture for larger deployments. Billing, SCIM, per-company identity-provider configuration, automatic scheduling and high availability are not implemented in this release.
+The next commercial milestones are external customer pilots, infrastructure isolation review, service observability, enterprise identity lifecycle integrations and durable distributed queues for larger deployments. Billing, SCIM, per-company identity-provider configuration, automatic scheduling and high availability are not implemented in this release.

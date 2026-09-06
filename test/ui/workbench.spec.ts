@@ -1,5 +1,10 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem("inspector-welcome-seen", "true"),
+  );
+});
 
 test("initial workspace is accessible and responsive at five widths", async ({
   page,

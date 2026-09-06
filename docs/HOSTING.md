@@ -1,6 +1,6 @@
 # Hosting and customer onboarding
 
-Launch Inspector 0.2 runs as one service with separate customer organizations. This guide targets a dedicated Linux host and Docker Compose v2. Windows supports local development. Review [security boundaries](SECURITY.md) and [operations](OPERATIONS.md) before onboarding customer data.
+Launch Inspector 0.3 runs as one controller and one separate authenticated browser worker with separate customer organizations. This guide targets a dedicated Linux host and Docker Compose v2. Windows supports local development. Review [security boundaries](SECURITY.md) and [operations](OPERATIONS.md) before onboarding customer data.
 
 ## 1. Prepare infrastructure
 
@@ -39,7 +39,7 @@ INSPECTOR_OIDC_CLIENT_ID=your-client-id
 # INSPECTOR_OIDC_REQUIRED_ACR=your-mfa-context
 ```
 
-Create `secrets/oidc_client_secret.txt` containing only the client secret. Protect the parent directory and `.env` with owner-only host permissions. Compose mounts that file as a secret; ensure UID 1000 can read it in the container. Neither `.env` nor `secrets/` is tracked by Git or included in the Docker build context.
+Create `secrets/oidc_client_secret.txt` containing only the client secret. Also create `secrets/worker_token.txt` containing a cryptographically random shared token of at least 32 characters. For example, generate 32 random bytes with Node `crypto.randomBytes(32).toString("hex")` and write them directly to the private file. Never publish either secret. Protect the parent directory and `.env` with owner-only host permissions. Compose mounts that file as a secret; ensure UID 1000 can read it in the container. Both the controller and worker receive the worker token; only the controller receives the OIDC secret and persistent data volume. Neither `.env` nor `secrets/` is tracked by Git or included in the Docker build context.
 
 ```sh
 docker compose config --quiet
@@ -62,7 +62,7 @@ docker compose up -d
 docker compose ps
 ```
 
-Replace all example values. Repeat `--target` for additional approved origins, up to 50. Target DNS must resolve to public addresses and use valid HTTPS. The service operator is responsible for confirming that the company is authorized to inspect these origins; creating an organization is not automated domain-ownership verification.
+Replace all example values. Repeat `--target` for additional approved origins, up to 50. Target DNS must resolve to public addresses and use valid HTTPS. The service operator is responsible for confirming that the company is authorized to inspect these origins; after provisioning, the owner must prove control in **Organization controls → Verified targets** using a company-specific DNS TXT record or HTTPS verification file. New challenges expire in 24 hours. Successful verification lasts 30 days; renew it using the same published record. Expired targets cannot start new inspections.
 
 The owner signs in with the exact approved, verified email. The first successful sign-in binds that membership to the issuer and subject; merely presenting the same email later from a different subject does not take it over. No invitation email is sent by Launch Inspector. An organization owner can add more approved emails through **Organization controls → People & access**.
 
@@ -85,10 +85,12 @@ Membership and project permissions are checked on every API request. Removal blo
 
 ## Direct Node deployment
 
-Install Node.js 24.13+, production dependencies, Chromium/system libraries and the built UI as described in the README. Run under a dedicated non-root account and a service manager. Set:
+Run `node dist/cli.js worker` on a separate isolated worker host/container with `INSPECTOR_WORKER_TOKEN_FILE` and `INSPECTOR_WORKER_HOST` configured. Do not mount controller data or identity secrets there. Keep the worker endpoint private; use HTTPS for communication across hosts. The worker defaults to port 8799. Then install Node.js 24.13+, production dependencies, Chromium/system libraries and the built UI as described in the README. Run under a dedicated non-root account and a service manager. Set:
 
 | Variable                            | Purpose                                               |
 | ----------------------------------- | ----------------------------------------------------- |
+| `INSPECTOR_WORKER_URL` | Exact private worker origin; HTTPS across hosts, `http://worker:8799` within Compose |
+| `INSPECTOR_WORKER_TOKEN_FILE` | Private file containing the shared worker token |
 | `INSPECTOR_MODE=hosted`             | Enables authenticated organization mode               |
 | `INSPECTOR_PUBLIC_URL`              | Exact HTTPS origin, with no trailing slash/path/query |
 | `INSPECTOR_OIDC_ISSUER`             | HTTPS discovery issuer                                |
@@ -107,3 +109,9 @@ Only the trusted TLS proxy should reach the control port. Preserve the original 
 ## Pilot acceptance
 
 Use two actual pilot companies and your configured provider to verify sign-in, MFA, claim mapping, project restrictions, evidence access, logout and owner transfer. Run representative authorized staging checks, restore a backup onto a replacement host, and validate your network policy and monitoring. The repository's signed synthetic-provider tests verify protocol behavior but do not establish compatibility with every provider configuration.
+
+## Upgrade from 0.2
+
+Stop the old controller and take a verified offline backup. Build the new image, provision the worker token and start the updated Compose stack. The controller migrates SQLite to schema 3. Existing organizations, projects, evidence and reviews remain available; each hosted origin must be verified before its next inspection. Retention defaults to disabled, so the upgrade itself does not remove existing reports.
+
+The Compose networks separate worker control traffic from the public proxy; the worker has an additional egress network. These networks alone do **not** block access to your host, private networks or cloud metadata. Configure and test host/cloud egress policy for those destinations. The worker token authorizes browser jobs, so keep the endpoint private and rotate the token in both services during a coordinated restart.

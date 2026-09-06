@@ -2,7 +2,43 @@ name: launch-inspector
 services:
   inspector:
     build: .
-    image: launch-inspector:0.2.0
+    image: launch-inspector:0.3.0
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./deploy/seccomp_profile.json
+    shm_size: 256mb
+    mem_limit: 1g
+    pids_limit: 128
+    stop_grace_period: 45s
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=512m,mode=1777
+    environment:
+      INSPECTOR_MODE: hosted
+      INSPECTOR_HOST: 0.0.0.0
+      INSPECTOR_DATA_DIR: /data
+      INSPECTOR_PUBLIC_URL: https://${INSPECTOR_DOMAIN:?Set INSPECTOR_DOMAIN}
+      INSPECTOR_OIDC_ISSUER: ${INSPECTOR_OIDC_ISSUER:?Set INSPECTOR_OIDC_ISSUER}
+      INSPECTOR_OIDC_CLIENT_ID: ${INSPECTOR_OIDC_CLIENT_ID:?Set INSPECTOR_OIDC_CLIENT_ID}
+      INSPECTOR_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
+      INSPECTOR_OIDC_REQUIRED_ACR: ${INSPECTOR_OIDC_REQUIRED_ACR:-}
+      INSPECTOR_WORKER_URL: http://worker:8799
+      INSPECTOR_WORKER_TOKEN_FILE: /run/secrets/worker_token
+    secrets:
+      - oidc_client_secret
+      - worker_token
+    volumes:
+      - inspector-data:/data
+    networks: [frontend, worker-control]
+    depends_on:
+      worker:
+        condition: service_healthy
+  worker:
+    image: launch-inspector:0.3.0
+    command: [node, dist/cli.js, worker]
     init: true
     restart: unless-stopped
     read_only: true
@@ -17,21 +53,20 @@ services:
     tmpfs:
       - /tmp:rw,nosuid,nodev,size=512m,mode=1777
     environment:
-      INSPECTOR_MODE: hosted
-      INSPECTOR_HOST: 0.0.0.0
-      INSPECTOR_DATA_DIR: /data
-      INSPECTOR_PUBLIC_URL: https://${INSPECTOR_DOMAIN:?Set INSPECTOR_DOMAIN}
-      INSPECTOR_OIDC_ISSUER: ${INSPECTOR_OIDC_ISSUER:?Set INSPECTOR_OIDC_ISSUER}
-      INSPECTOR_OIDC_CLIENT_ID: ${INSPECTOR_OIDC_CLIENT_ID:?Set INSPECTOR_OIDC_CLIENT_ID}
-      INSPECTOR_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
-      INSPECTOR_OIDC_REQUIRED_ACR: ${INSPECTOR_OIDC_REQUIRED_ACR:-}
-    secrets:
-      - oidc_client_secret
-    volumes:
-      - inspector-data:/data
+      INSPECTOR_WORKER_HOST: 0.0.0.0
+      INSPECTOR_WORKER_TOKEN_FILE: /run/secrets/worker_token
+    secrets: [worker_token]
+    networks: [worker-control, worker-egress]
+    healthcheck:
+      test: [CMD, node, deploy/worker-healthcheck.mjs]
+      interval: 15s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
   proxy:
     image: caddy:2-alpine
     restart: unless-stopped
+    networks: [frontend]
     ports: ["80:80", "443:443"]
     environment:
       INSPECTOR_DOMAIN: ${INSPECTOR_DOMAIN:?Set INSPECTOR_DOMAIN}
@@ -45,6 +80,13 @@ services:
 secrets:
   oidc_client_secret:
     file: ./secrets/oidc_client_secret.txt
+  worker_token:
+    file: ./secrets/worker_token.txt
+networks:
+  frontend:
+  worker-control:
+    internal: true
+  worker-egress:
 volumes:
   inspector-data:
   caddy-data:

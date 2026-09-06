@@ -17,6 +17,7 @@ import type {
   Run,
   Role,
 } from "../../src/contracts";
+import { TargetsPanel, RetentionPanel } from "./controls";
 import { request } from "./client";
 type Member = {
   email: string;
@@ -58,7 +59,7 @@ export function Governance({
     try {
       setError("");
       if (tab === "people") setMembers(await request<Member[]>("/members"));
-      else setAudit(await request<AuditPage>("/audit"));
+      else if (tab === "audit") setAudit(await request<AuditPage>("/audit"));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -115,13 +116,32 @@ export function Governance({
           <ScrollText size={16} />
           Audit history
         </button>
+        {hosted && (
+          <button
+            onClick={() => setTab("targets")}
+            aria-pressed={tab === "targets"}
+          >
+            <ShieldCheck size={16} />
+            Verified targets
+          </button>
+        )}
+        <button
+          onClick={() => setTab("retention")}
+          aria-pressed={tab === "retention"}
+        >
+          Evidence retention
+        </button>
       </nav>
       {error && (
         <p className="alert" role="alert">
           {error}
         </p>
       )}
-      {tab === "people" ? (
+      {tab === "targets" ? (
+        <TargetsPanel />
+      ) : tab === "retention" ? (
+        <RetentionPanel />
+      ) : tab === "people" ? (
         <div className="governance-grid">
           <div className="control-card">
             <div className="control-heading">

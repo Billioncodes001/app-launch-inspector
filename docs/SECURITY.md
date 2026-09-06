@@ -13,7 +13,7 @@ Launch Inspector exercises web applications and stores their test credentials an
 | Stored configuration → disclosure | AES-256-GCM with organization/project-scoped keys, passwords omitted from API responses                                                         | Protect the shared root key, volumes and backups; encrypt storage        |
 | Finding → release decision        | Baseline validation, recorded original results, separate versioned reviews and audit entries                                                    | Interpret evidence and decide whether release risk is acceptable         |
 
-Organization isolation is enforced by application logic in a shared process/database. It is not a separate VM or database per tenant. The browser and controller share a container; do not treat it as an isolation boundary against a browser escape. Larger or higher-risk commercial deployments need a separately isolated worker architecture and independent review.
+Organization isolation is enforced by application logic in a shared process/database. It is not a separate VM or database per tenant. In the supported hosted deployment, browsers run in a separate worker container without the controller database, master key or OIDC secret. Each job uses a child process and temporary directory with an allowlisted environment. Jobs still share the worker OS/container, and its service holds the worker token. A browser escape could affect other concurrent worker jobs; this is not a separate VM per tenant. Stronger workload isolation and independent review are needed for higher-risk deployments.
 
 ## Identity and sessions
 
@@ -25,7 +25,7 @@ Owners see all company projects. Unrestricted editors may create projects; proje
 
 ## Browser scope
 
-Hosted target origins are explicitly approved by the service operator and must resolve to public addresses over HTTPS. Private, loopback, link-local and metadata destinations are blocked. Local mode allows loopback targets but must bind its dashboard to loopback. Target DNS is checked before queueing and execution and pinned in Chromium. Other origins, WebSockets and service workers are blocked. The browser process receives a limited environment rather than controller secrets.
+Hosted target origins are explicitly approved by the service operator and must resolve to public addresses over HTTPS. Owners must additionally publish a company-specific ownership proof, verified through a pinned HTTPS fetch with no redirects or a DNS TXT lookup. Verification expires after 30 days and is checked before each queued job begins. Private, loopback, link-local and metadata destinations are blocked. Local mode allows loopback targets but must bind its dashboard to loopback. Target DNS is checked before queueing and execution and pinned in Chromium. Other origins, WebSockets and service workers are blocked. The browser process receives a limited environment rather than controller secrets.
 
 These controls do not amount to a complete network sandbox. Use external egress policy and a dedicated host. Browser process compromise, dependency vulnerabilities and kernel escape are outside application-level guarantees. The synthetic organization demo has explicit loopback/HTTP test exceptions that are not available through production CLI settings.
 
@@ -40,3 +40,9 @@ Audit chains are tamper-evident under the root-key trust assumption, not immutab
 ## Reporting a vulnerability
 
 Do not post credentials, customer data, exploit evidence from an unauthorized target or private logs in a public issue. Submit a synthetic minimal reproduction through an agreed private maintainer channel. Include version, operating system, affected boundary and reproducible steps. This repository does not currently promise a security response SLA.
+
+## Worker and retention protocols
+
+The worker requires a shared bearer token, bounds jobs and evidence, validates its own public-target policy, and enforces Chromium sandboxing in production. Controller responses are validated against the submitted check plan; missing completion is an interrupted/error run, never a passing result. Evidence travels over the private Compose network or HTTPS between hosts. Do not expose the worker port publicly. There is no automatic retry of state-changing inspections.
+
+Manual cleanup previews are encrypted, bound to the actor and organization, and expire after ten minutes. Execution rechecks each record and hold before committing. Removed records immediately lose API access; durable cleanup jobs retry any failed file deletion. Cleanup only accepts expected evidence folders and regular files. It does not erase exported copies, operator backups, project configurations or audit history. Retention holds are workflow controls, not a legal-hold compliance certification.
