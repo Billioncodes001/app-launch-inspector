@@ -19,6 +19,7 @@ import type {
 } from "../../src/contracts";
 import { TargetsPanel, RetentionPanel } from "./controls";
 import { request } from "./client";
+import type { Invitation } from "../../src/registration";
 type Member = {
   email: string;
   role: Role;
@@ -55,11 +56,15 @@ export function Governance({
   }>({ email: "", role: "viewer", projectIds: [], version: 0 });
   const [limited, setLimited] = useState(false),
     [remove, setRemove] = useState<Member>();
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [inviteNotice, setInviteNotice] = useState("");
   async function load() {
     try {
       setError("");
-      if (tab === "people") setMembers(await request<Member[]>("/members"));
-      else if (tab === "audit") setAudit(await request<AuditPage>("/audit"));
+      if (tab === "people") {
+        setMembers(await request<Member[]>("/members"));
+        setInvitations(await request<Invitation[]>("/invitations"));
+      } else if (tab === "audit") setAudit(await request<AuditPage>("/audit"));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -73,10 +78,21 @@ export function Governance({
     try {
       if (limited && !draft.projectIds.length)
         throw Error("Select at least one project for restricted access");
-      await request("/members", "PUT", {
-        ...draft,
-        projectIds: limited ? draft.projectIds : [],
-      });
+      if (draft.version)
+        await request("/members", "PUT", {
+          ...draft,
+          projectIds: limited ? draft.projectIds : [],
+        });
+      else {
+        await request("/invitations", "POST", {
+          email: draft.email,
+          role: draft.role,
+          projectIds: limited ? draft.projectIds : [],
+        });
+        setInviteNotice(
+          `Invitation created for ${draft.email}. Share the join link below. No email has been sent.`,
+        );
+      }
       setDraft({ email: "", role: "viewer", projectIds: [], version: 0 });
       setLimited(false);
       await load();
@@ -138,7 +154,7 @@ export function Governance({
         </p>
       )}
       {tab === "targets" ? (
-        <TargetsPanel />
+        <TargetsPanel organizationId={organization.organizationId} />
       ) : tab === "retention" ? (
         <RetentionPanel />
       ) : tab === "people" ? (
@@ -153,8 +169,8 @@ export function Governance({
             </div>
             <p className="control-copy">
               Members sign in through the configured identity provider with
-              their verified work email. Adding a member grants access; it does
-              not send an email.
+              their verified work email. Invitations expire after seven days;
+              access begins only when the invited person accepts.
             </p>
             <div className="member-list">
               {members.map((m) => (
@@ -199,6 +215,81 @@ export function Governance({
                 </div>
               ))}
             </div>
+            <section
+              className="pending-invites"
+              aria-label="Pending invitations"
+            >
+              <h3>
+                Pending invitations{" "}
+                <span className="count-chip">{invitations.length}</span>
+              </h3>
+              {inviteNotice && (
+                <p role="status" className="account-notice">
+                  {inviteNotice}
+                </p>
+              )}
+              {!!invitations.length && (
+                <div className="invite-share">
+                  <label>
+                    Team join link
+                    <input readOnly value={window.location.origin + "/join"} />
+                  </label>
+                  <button
+                    className="text-button"
+                    onClick={() =>
+                      void navigator.clipboard
+                        .writeText(window.location.origin + "/join")
+                        .then(() =>
+                          setInviteNotice(
+                            "Join link copied. Only an invited, verified email can accept.",
+                          ),
+                        )
+                        .catch(() =>
+                          setError("Copy the join link from the field above."),
+                        )
+                    }
+                  >
+                    Copy join link
+                  </button>
+                </div>
+              )}
+              {!invitations.length && (
+                <p className="control-copy">No pending invitations.</p>
+              )}
+              {invitations.map((i) => (
+                <div className="pending-invite" key={i.id}>
+                  <div>
+                    <strong>{i.email}</strong>
+                    <span>
+                      {i.role} ·{" "}
+                      {i.projectIds.length
+                        ? `${i.projectIds.length} projects`
+                        : "All projects"}{" "}
+                      · Expires {new Date(i.expiresAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <button
+                    className="text-button"
+                    disabled={busy}
+                    aria-label={`Revoke invitation for ${i.email}`}
+                    onClick={async () => {
+                      setBusy(true);
+                      try {
+                        await request("/invitations", "DELETE", { id: i.id });
+                        setInviteNotice("Invitation revoked.");
+                        await load();
+                      } catch (e) {
+                        setError((e as Error).message);
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    Revoke
+                  </button>
+                </div>
+              ))}
+            </section>
             {remove && (
               <div className="remove-confirm" role="alert">
                 <p>
@@ -236,7 +327,7 @@ export function Governance({
             )}
           </div>
           <div className="control-card">
-            <h2>{draft.version ? "Update access" : "Add a team member"}</h2>
+            <h2>{draft.version ? "Update access" : "Invite a team member"}</h2>
             <form
               className="member-form"
               onSubmit={(e) => {
@@ -326,7 +417,7 @@ export function Governance({
                 ) : (
                   <UserPlus size={15} />
                 )}
-                {draft.version ? "Save access" : "Add member"}
+                {draft.version ? "Save access" : "Create invitation"}
               </button>
               {!!draft.version && (
                 <button

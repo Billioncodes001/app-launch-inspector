@@ -35,6 +35,7 @@ export class Authentication {
     readonly access: Access,
     readonly origin: string,
     readonly settings: OidcSettings,
+    readonly allowSignup = false,
   ) {
     this.sessionName = origin.startsWith("https:")
       ? "__Host-inspector"
@@ -96,14 +97,21 @@ export class Authentication {
       ) >= 1000
     )
       throw new HttpError(429, "Sign-in capacity is temporarily full");
-    db.sql
-      .prepare("INSERT INTO auth_transactions VALUES(?,?,?,?)")
-      .run(
-        digest(state),
-        digest(binding),
-        db.encrypt("auth-flow:" + digest(state), { state, nonce, verifier }),
-        Date.now(),
-      );
+    db.sql.prepare("INSERT INTO auth_transactions VALUES(?,?,?,?)").run(
+      digest(state),
+      digest(binding),
+      db.encrypt("auth-flow:" + digest(state), {
+        state,
+        nonce,
+        verifier,
+        destination:
+          new URL(req.url ?? "", this.origin).searchParams.get("returnTo") ===
+          "account"
+            ? "/account"
+            : "/",
+      }),
+      Date.now(),
+    );
     const url = oidc.buildAuthorizationUrl(this.config, {
       redirect_uri: this.origin + "/auth/callback",
       scope: "openid email profile",
@@ -149,10 +157,12 @@ export class Authentication {
         .run(digest(state));
       return found;
     });
-    const flow = db.decrypt<{ state: string; nonce: string; verifier: string }>(
-      "auth-flow:" + digest(state),
-      String(row.data),
-    );
+    const flow = db.decrypt<{
+      state: string;
+      nonce: string;
+      verifier: string;
+      destination?: string;
+    }>("auth-flow:" + digest(state), String(row.data));
     const tokens = await oidc.authorizationCodeGrant(this.config, url, {
       pkceCodeVerifier: flow.verifier,
       expectedState: flow.state,
@@ -185,6 +195,7 @@ export class Authentication {
       profile.email,
       profile.email_verified,
       profile.name,
+      this.allowSignup,
     );
     const old = cookies(req)[this.sessionName];
     if (old)
@@ -194,7 +205,10 @@ export class Authentication {
       this.cookie(this.flowName, "", 0),
       this.cookie(this.sessionName, session.token, 43200),
     ]);
-    res.writeHead(303, { Location: this.origin + "/" });
+    res.writeHead(303, {
+      Location:
+        this.origin + (flow.destination === "/account" ? "/account" : "/"),
+    });
     res.end();
   }
   private createSession(actor: Actor) {

@@ -287,6 +287,8 @@ export type AuditEntry = {
 export type SessionInfo = {
   mode: "local" | "hosted";
   authenticated: boolean;
+  signupEnabled?: boolean;
+  demo?: boolean;
   user?: Actor;
   organizations: Membership[];
   csrf: string;

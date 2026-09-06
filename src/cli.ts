@@ -7,6 +7,7 @@ import { startDemo } from "./demo.js";
 import { startServer } from "./server.js";
 import { Store } from "./store.js";
 import { Access } from "./access.js";
+import { Registration } from "./registration.js";
 import { targetPolicy } from "./network.js";
 import { startWorker } from "./worker-server.js";
 import {
@@ -23,6 +24,7 @@ async function main() {
       help: { type: "boolean" },
       name: { type: "string" },
       owner: { type: "string" },
+      organization: { type: "string" },
       target: { type: "string", multiple: true },
       input: { type: "string" },
       output: { type: "string" },
@@ -34,13 +36,14 @@ async function main() {
       ? readFileSync(process.env.INSPECTOR_WORKER_TOKEN_FILE, "utf8").trim()
       : (process.env.INSPECTOR_WORKER_TOKEN ?? "");
   if (values.help) {
-    console.log(`Launch Inspector 0.3.1
+    console.log(`Launch Inspector 0.4.0
 
 node dist/cli.js                       Start local or hosted mode
 node dist/cli.js doctor                Check runtime prerequisites
 node dist/cli.js worker                Start the authenticated browser worker
 node dist/cli.js org-create --name NAME --owner EMAIL --target HTTPS_ORIGIN
 node dist/cli.js org-list              List provisioned organizations
+node dist/cli.js org-approve-target --organization UUID --target HTTPS_ORIGIN
 node dist/cli.js backup --output NEW_DIRECTORY
 node dist/cli.js verify-backup --input BACKUP_DIRECTORY
 node dist/cli.js restore --input BACKUP_DIRECTORY --output NEW_DATA_DIRECTORY
@@ -116,14 +119,38 @@ See docs/HOSTING.md for deployment and docs/OPERATIONS.md for recovery.`);
     );
     return;
   }
-  if (command === "org-create" || command === "org-list") {
+  if (["org-create", "org-list", "org-approve-target"].includes(command)) {
     const store = new Store(dataDir);
     let lease: ReturnType<typeof acquireLease> | undefined;
     try {
       const access = new Access(store.database);
+      const registration = new Registration(access);
       if (command === "org-list")
-        console.log(JSON.stringify(access.organizations(), null, 2));
-      else {
+        console.log(
+          JSON.stringify(
+            access
+              .organizations()
+              .map((org) => ({
+                ...org,
+                registration: registration.registration(org.id),
+              })),
+            null,
+            2,
+          ),
+        );
+      else if (command === "org-approve-target") {
+        lease = acquireLease(store.database);
+        if (!values.organization || values.target?.length !== 1)
+          throw Error("Provide --organization and one --target");
+        await targetPolicy(values.target[0], [], false);
+        console.log(
+          JSON.stringify(
+            registration.approveTarget(values.organization, values.target[0]),
+            null,
+            2,
+          ),
+        );
+      } else {
         lease = acquireLease(store.database);
         const origins = values.target ?? [];
         for (const origin of origins) await targetPolicy(origin, [], false);
@@ -149,6 +176,9 @@ See docs/HOSTING.md for deployment and docs/OPERATIONS.md for recovery.`);
   if (!["local", "hosted"].includes(mode))
     throw Error("INSPECTOR_MODE must be local or hosted");
   const hosted = mode === "hosted";
+  const signup = process.env.INSPECTOR_SIGNUP ?? "invite_only";
+  if (!["invite_only", "self_service"].includes(signup))
+    throw Error("INSPECTOR_SIGNUP must be invite_only or self_service");
   const settings = hosted
     ? {
         issuer: process.env.INSPECTOR_OIDC_ISSUER ?? "",
@@ -229,6 +259,7 @@ See docs/HOSTING.md for deployment and docs/OPERATIONS.md for recovery.`);
       host: process.env.INSPECTOR_HOST ?? "127.0.0.1",
       publicOrigin: process.env.INSPECTOR_PUBLIC_URL,
       oidc: settings,
+      signupEnabled: signup === "self_service",
       worker: process.env.INSPECTOR_WORKER_URL
         ? { url: process.env.INSPECTOR_WORKER_URL, token: workerToken() }
         : undefined,

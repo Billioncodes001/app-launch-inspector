@@ -25,6 +25,7 @@ import { HttpError } from "./errors.js";
 import { acquireLease } from "./operations.js";
 import { Targets } from "./targets.js";
 import { Retention } from "./retention.js";
+import { Registration } from "./registration.js";
 import {
   validateWorkerConnection,
   type WorkerConnection,
@@ -72,6 +73,7 @@ export async function startServer(options: {
   host?: string;
   publicOrigin?: string;
   oidc?: OidcSettings;
+  signupEnabled?: boolean;
   allowLoopbackTargetsForTests?: boolean;
   browserSandbox?: boolean;
   worker?: WorkerConnection;
@@ -101,6 +103,7 @@ export async function startServer(options: {
     capacity = new BrowserCapacity(2, 20);
   const targets = new Targets(access, options.allowLoopbackTargetsForTests),
     retention = new Retention(store);
+  const registration = new Registration(access);
   let workerReady = !options.worker;
   const checkWorker = async () => {
     if (!options.worker) return;
@@ -128,7 +131,12 @@ export async function startServer(options: {
     uiDir = resolve(options.uiDir ?? "ui-dist");
   let index: string;
   const auth = hosted
-    ? new Authentication(access, options.publicOrigin!, options.oidc!)
+    ? new Authentication(
+        access,
+        options.publicOrigin!,
+        options.oidc!,
+        options.signupEnabled === true,
+      )
     : undefined;
   try {
     index = (await readFile(join(uiDir, "index.html"), "utf8")).replace(
@@ -236,7 +244,15 @@ export async function startServer(options: {
         path = url.pathname;
       const navigation =
         req.method === "GET" &&
-        ["/", "/auth/login", "/auth/callback"].includes(path);
+        [
+          "/",
+          "/signup",
+          "/signin",
+          "/join",
+          "/account",
+          "/auth/login",
+          "/auth/callback",
+        ].includes(path);
       if (
         req.headers.host !== new URL(origin).host ||
         (req.headers.origin && req.headers.origin !== origin) ||
@@ -260,7 +276,7 @@ export async function startServer(options: {
         store.database.sql.prepare("SELECT 1").get();
         send(ready ? 200 : 503, {
           status: ready ? "ready" : "unavailable",
-          version: "0.3.1",
+          version: "0.4.0",
         });
         return;
       }
@@ -275,6 +291,13 @@ export async function startServer(options: {
         try {
           await auth.callback(req, res);
         } catch (error) {
+          if (req.headers.accept?.includes("text/html")) {
+            res.writeHead(303, {
+              Location: origin + "/signin?error=signin_failed",
+            });
+            res.end();
+            return;
+          }
           if (error instanceof HttpError) throw error;
           throw new HttpError(
             403,
@@ -300,6 +323,8 @@ export async function startServer(options: {
             send(200, {
               mode: hosted ? "hosted" : "local",
               authenticated: !hosted || !!session,
+              signupEnabled: hosted && options.signupEnabled === true,
+              demo: hosted && options.oidc?.allowHttpForTests === true,
               user: hosted ? session?.actor : localActor,
               organizations: hosted
                 ? session
@@ -342,6 +367,58 @@ export async function startServer(options: {
             send(200, { signedOut: true });
             return;
           }
+          if (hosted && path === "/api/account" && req.method === "GET") {
+            send(200, { invitations: registration.pending(actor) });
+            return;
+          }
+          if (
+            auth &&
+            session &&
+            path === "/api/account/revoke-sessions" &&
+            req.method === "POST"
+          ) {
+            z.object({})
+              .strict()
+              .parse(await jsonBody(req));
+            const result = store.database.sql
+              .prepare(
+                "DELETE FROM sessions WHERE json_extract(actor,'$.id')=? AND hash<>?",
+              )
+              .run(actor.id, session.hash);
+            for (const m of access.memberships(actor))
+              store.database.audit(
+                m.organizationId,
+                actor,
+                "session.others_revoked",
+              );
+            send(200, { revoked: Number(result.changes) });
+            return;
+          }
+          if (
+            hosted &&
+            path === "/api/organizations" &&
+            req.method === "POST"
+          ) {
+            if (!options.signupEnabled)
+              throw new HttpError(
+                403,
+                "Workspace creation is managed by the service operator on this deployment",
+              );
+            send(201, registration.create(actor, await jsonBody(req)));
+            return;
+          }
+          if (
+            hosted &&
+            path === "/api/account/accept-invitation" &&
+            req.method === "POST"
+          ) {
+            const input = z
+              .object({ id: z.string().uuid() })
+              .strict()
+              .parse(await jsonBody(req));
+            send(200, registration.accept(actor, input.id));
+            return;
+          }
           const member = hosted
             ? access.member(
                 actor,
@@ -362,10 +439,11 @@ export async function startServer(options: {
               runs: scoped
                 .listRuns()
                 .filter((r) => access.canProject(member, r.projectId)),
-              version: "0.3.1",
+              version: "0.4.0",
               demoOrigin: hosted ? "" : options.demoOrigin,
               organization: member,
               approvedOrigins: hosted ? access.organization(org).origins : [],
+              registration: hosted ? registration.registration(org) : null,
               verifiedOrigins: hosted
                 ? targets
                     .list(org)
@@ -482,6 +560,26 @@ export async function startServer(options: {
             retention.hold(org, hold[1], input.note, actor);
             send(200, scoped.getRun(hold[1]));
             return;
+          }
+          if (hosted && path === "/api/invitations") {
+            access.assertOwner(member);
+            if (req.method === "GET") {
+              send(200, registration.invitations(org, actor));
+              return;
+            }
+            if (req.method === "POST") {
+              send(201, registration.invite(org, actor, await jsonBody(req)));
+              return;
+            }
+            if (req.method === "DELETE") {
+              const input = z
+                .object({ id: z.string().uuid() })
+                .strict()
+                .parse(await jsonBody(req));
+              registration.revoke(org, actor, input.id);
+              send(200, { revoked: true });
+              return;
+            }
           }
           if (path === "/api/members") {
             access.assertOwner(member);
@@ -720,7 +818,7 @@ export async function startServer(options: {
         }
       }
       if (req.method !== "GET") throw new HttpError(405, "Method not allowed");
-      if (path === "/") {
+      if (["/", "/signup", "/signin", "/join", "/account"].includes(path)) {
         send(200, index, "text/html; charset=utf-8");
         return;
       }
@@ -816,6 +914,7 @@ export async function startServer(options: {
     origin,
     store,
     access,
+    registration,
     targets,
     retention,
     capacity,

@@ -31,7 +31,7 @@ export class Database {
     if (this.key.length !== 32) throw Error("Invalid local encryption key");
     this.sql = new DatabaseSync(join(root, "inspector.sqlite"));
     if (
-      Number(this.sql.prepare("PRAGMA user_version").get()?.user_version) > 3
+      Number(this.sql.prepare("PRAGMA user_version").get()?.user_version) > 4
     ) {
       this.sql.close();
       throw Error("This database requires a newer Launch Inspector version");
@@ -55,10 +55,14 @@ export class Database {
       CREATE TABLE IF NOT EXISTS retention_policies (organization_id TEXT PRIMARY KEY, days INTEGER NOT NULL, version INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS run_holds (organization_id TEXT NOT NULL, run_id TEXT NOT NULL, note TEXT NOT NULL, actor TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(organization_id,run_id));
       CREATE TABLE IF NOT EXISTS purge_jobs (organization_id TEXT NOT NULL, run_id TEXT NOT NULL, legacy INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, PRIMARY KEY(organization_id,run_id));
+      CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS organization_registrations (organization_id TEXT PRIMARY KEY REFERENCES organizations(id), account_id TEXT NOT NULL REFERENCES accounts(id), request_id TEXT NOT NULL, requested_origin TEXT NOT NULL, UNIQUE(account_id,request_id));
+      CREATE TABLE IF NOT EXISTS invitations (id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organizations(id), email TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('owner','editor','viewer')), project_ids TEXT NOT NULL, invited_by TEXT NOT NULL, expires_at INTEGER NOT NULL, UNIQUE(organization_id,email));
+      CREATE INDEX IF NOT EXISTS invitations_email ON invitations(email);
     `);
     try {
       this.importLegacy();
-      this.sql.exec("PRAGMA user_version=3");
+      this.sql.exec("PRAGMA user_version=4");
     } catch (error) {
       this.sql.close();
       throw error;

@@ -96,8 +96,9 @@ test("hosted sign-in, real inspection, review and audit history work through the
     animations: "disabled",
   });
 });
-test("owner can grant scoped membership, edit it and remove access with a clear confirmation", async ({
+test("owner can invite a scoped member, the recipient accepts, and access can be edited and removed", async ({
   page,
+  browser,
 }) => {
   await login(page);
   await page.getByRole("button", { name: "Organization controls" }).click();
@@ -109,7 +110,42 @@ test("owner can grant scoped membership, edit it and remove access with a clear 
   await page
     .getByRole("checkbox", { name: "Northstar staging", exact: true })
     .check();
-  await page.getByRole("button", { name: "Add member", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Create invitation", exact: true })
+    .click();
+  await expect(
+    page
+      .locator(".pending-invite")
+      .filter({ hasText: "new-reviewer@example.test" }),
+  ).toContainText("1 projects");
+  await expect(
+    page
+      .locator(".member-row")
+      .filter({ hasText: "new-reviewer@example.test" }),
+  ).toHaveCount(0);
+  const recipient = await browser.newContext();
+  try {
+    const join = await recipient.newPage();
+    await join.goto("http://127.0.0.1:8798/join");
+    await join
+      .getByRole("link", { name: "Sign in with your work account" })
+      .click();
+    await join
+      .getByLabel("Demo identity")
+      .selectOption("new-reviewer@example.test");
+    await join.getByRole("button", { name: "Continue to workspace" }).click();
+    await expect(
+      join.getByRole("heading", { name: "Join your team." }),
+    ).toBeVisible();
+    await join.getByRole("button", { name: "Accept invitation" }).click();
+    await expect(join.getByLabel("Organization workspace")).toContainText(
+      "Northstar Labs",
+    );
+  } finally {
+    await recipient.close();
+  }
+  await page.reload();
+  await page.getByRole("button", { name: "Organization controls" }).click();
   const row = page
     .locator(".member-row")
     .filter({ hasText: "new-reviewer@example.test" });

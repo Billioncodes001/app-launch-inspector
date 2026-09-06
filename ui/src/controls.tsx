@@ -16,7 +16,7 @@ import type {
 } from "../../src/contracts";
 import { request } from "./client";
 
-export function TargetsPanel() {
+export function TargetsPanel({ organizationId }: { organizationId?: string }) {
   const [targets, setTargets] = useState<TargetProof[]>([]),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(""),
@@ -73,9 +73,17 @@ export function TargetsPanel() {
         </p>
       )}
       {!targets.length && (
-        <p className="empty-copy">
-          Ask your service operator to approve your staging origin to begin.
-        </p>
+        <div className="empty-copy">
+          <p>
+            Ask your service operator to approve your staging origin to begin.
+          </p>
+          {organizationId && (
+            <label className="account-reference">
+              Organization reference
+              <input value={organizationId} readOnly />
+            </label>
+          )}
+        </div>
       )}
       {targets.map((t) => (
         <article className="target-proof" key={t.origin}>

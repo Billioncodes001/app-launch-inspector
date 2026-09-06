@@ -145,10 +145,17 @@ export class Access {
         throw new HttpError(409, "You cannot remove your own owner access");
       if (old?.role === "owner" && input.role !== "owner")
         this.keepOwner(org, String(old.subject ?? ""));
-      if (!old && this.members(org).length >= 100)
+      const pending = Number(
+        this.database.sql
+          .prepare(
+            "SELECT count(*) AS n FROM invitations WHERE organization_id=? AND email<>? AND expires_at>?",
+          )
+          .get(org, input.email, Date.now())?.n,
+      );
+      if (!old && this.members(org).length + pending >= 100)
         throw new HttpError(
           409,
-          "This organization has reached its 100-member limit",
+          "This organization has reached its 100-member and pending-invitation limit",
         );
       for (const id of input.projectIds)
         if (
@@ -221,6 +228,7 @@ export class Access {
     email: unknown,
     verified: unknown,
     name: unknown,
+    allowSignup = false,
   ): Actor {
     if (
       typeof email !== "string" ||
@@ -249,11 +257,33 @@ export class Access {
         )
         .run(id, address);
       const memberships = this.memberships(actor);
-      if (!memberships.length)
+      const existing = this.database.sql
+        .prepare("SELECT 1 FROM accounts WHERE id=?")
+        .get(id);
+      const invited = this.database.sql
+        .prepare("SELECT 1 FROM invitations WHERE email=? AND expires_at>?")
+        .get(address, Date.now());
+      if (!memberships.length && !existing && !invited && !allowSignup)
         throw new HttpError(
           403,
           "Your account has no approved organization membership",
         );
+      if (
+        !existing &&
+        Number(
+          this.database.sql.prepare("SELECT count(*) AS n FROM accounts").get()
+            ?.n,
+        ) >= 10000
+      )
+        throw new HttpError(
+          429,
+          "Account capacity reached. Contact the service operator.",
+        );
+      this.database.sql
+        .prepare(
+          "INSERT INTO accounts VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET email=excluded.email,name=excluded.name",
+        )
+        .run(id, address, actor.name, new Date().toISOString());
       for (const m of memberships)
         this.database.audit(m.organizationId, actor, "session.signed_in");
       return actor;

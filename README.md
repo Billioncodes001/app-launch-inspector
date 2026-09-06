@@ -4,7 +4,11 @@
 
 Launch Inspector checks login, account permissions and customer journeys against a running web application. It uses real Chromium sessions, records screenshots and reproduction steps, and gives teams a shared place to review the findings before release.
 
-Version **0.3.1** adds separate authenticated browser workers, expiring target ownership verification, evidence retention with protected reports, and a guided first-inspection flow. Hosted workspaces include OpenID Connect sign-in, project permissions, review decisions, audit history and tested recovery tools. Local mode remains available for individual developers. This is a working hosted pilot; production readiness still depends on your infrastructure, identity provider, operating procedures and independent security review.
+Version **0.4.0** adds verified account registration, organization onboarding, expiring team invitations and personal session controls. It includes separate authenticated browser workers, target ownership verification, evidence retention and a guided first inspection. Hosted workspaces include OpenID Connect sign-in, project permissions, review decisions, audit history and tested recovery tools. Local mode remains available for individual developers. This is a working hosted pilot; production readiness still depends on your infrastructure, identity provider, operating procedures and independent security review.
+
+![Organization signup and onboarding](docs/account-signup.png)
+
+_Synthetic identity in the working organization signup flow._
 
 ![Guided first-inspection setup](docs/onboarding.png)
 
@@ -37,6 +41,9 @@ The dashboard includes a guided onboarding screen and supports saved targets, te
 ### Organization controls
 
 - **Sign-in:** standard OpenID Connect authorization code flow with PKCE, signed-token verification, verified email, secure server sessions and optional required authentication context. Your identity provider enforces MFA.
+- **Account onboarding:** `/signup`, `/signin`, `/join` and `/account` screens; optional self-service organization creation with verified identity, first-owner assignment and operator review of staging targets.
+- **Team invitations:** owner-created, email-bound invitations with a seven-day expiry, explicit acceptance, project scopes and revocation. Copy the join link to share it; the app does not send email.
+- **Personal account:** choose an organization, accept invitations, create another workspace when enabled and revoke other application sessions.
 - **Customer isolation:** every project, run, screenshot, review and audit request is scoped to the signed-in user's organization and project permissions.
 - **Roles:** owners manage membership and accept risk; editors configure and run assigned targets; viewers review assigned evidence. A member can belong to more than one organization with different roles.
 - **Change control:** configuration, membership and finding reviews use revision checks to reject stale updates.
@@ -78,17 +85,21 @@ npm run demo:organizations
 
 Open **[127.0.0.1:8798](http://127.0.0.1:8798)** and choose **Sign in with your work account**. The local test identity provider lets you choose a synthetic identity without entering a password:
 
-| Demo identity           | Access                                            |
-| ----------------------- | ------------------------------------------------- |
-| `owner-a@example.test`  | Owner of Northstar Labs; viewer in Harbor Systems |
-| `owner-b@example.test`  | Owner of Harbor Systems                           |
-| `viewer-a@example.test` | Viewer of Northstar's assigned staging project    |
+| Demo identity               | Access                                                 |
+| --------------------------- | ------------------------------------------------------ |
+| `owner-a@example.test`      | Owner of Northstar Labs; viewer in Harbor Systems      |
+| `owner-b@example.test`      | Owner of Harbor Systems                                |
+| `viewer-a@example.test`     | Viewer of Northstar's assigned staging project         |
+| `new-owner@example.test`    | New customer: create an organization through `/signup` |
+| `new-reviewer@example.test` | Invite this identity, then accept through `/join`      |
+
+For registration, open **[the signup demo](http://127.0.0.1:8798/signup)**, continue with a work identity and choose `new-owner@example.test`. Create a workspace and optionally record a staging origin for operator review. To test team onboarding, sign in as a Northstar owner, invite `new-reviewer@example.test`, then open the join link in another browser session and choose that identity. No real identity-provider registration or outbound email occurs in this demo.
 
 Try an inspection, record a review, open **Organization controls**, change a synthetic member's project access, inspect the audit history and switch organizations. Demo data is temporary. This test provider intentionally allows HTTP and local targets; it is excluded from the production image and must never be used as a hosted identity provider.
 
 ## Host for multiple companies
 
-The repository includes a Docker image, Compose deployment and Caddy TLS reverse proxy. Hosted mode requires a domain, your OpenID Connect developer application and an operator-approved target origin for each company. There is no public self-registration.
+The repository includes a Docker image, Compose deployment and Caddy TLS reverse proxy. Hosted mode requires a domain, your OpenID Connect developer application and an operator-approved target origin for each company. Set `INSPECTOR_SIGNUP=self_service` to let verified users register and create organizations; the default is `invite_only`. Configure user registration, verification and recovery in the identity provider too. New organizations can invite members immediately, but targets require operator approval and proof of control before inspections.
 
 Follow **[Hosting and customer onboarding](docs/HOSTING.md)** for the complete setup, environment variables and role model. Follow **[Operations and recovery](docs/OPERATIONS.md)** for health checks, backups, restore, upgrade and capacity planning. Read **[Security boundaries](docs/SECURITY.md)** before a customer pilot.
 
@@ -153,6 +164,7 @@ npm run check
 This builds the server and React UI, runs the backend/integration suite, then the dashboard browser suite. Ports **8797** and **8798** must be free. Stop the organization demo first. All fixtures use temporary data and synthetic accounts.
 
 - Actual browser runs demonstrate four seeded failures and six passing checks after correction.
+- Registration tests exercise verified and rejected signup, CSRF, idempotent creation, workspace quotas, invitation acceptance/expiry/revocation, session revocation, tenant isolation and schema migration.
 - Hosted tests exercise signed OIDC responses, callback replay, invalid signatures and claims, session expiry, membership revocation and cross-company/project access attempts.
 - Operations tests restore configuration and evidence, revoke restored sessions, reject damaged backups and prevent competing service instances.
 - Worker and lifecycle tests exercise real remote browser evidence, cancellation, incomplete responses, ownership expiration, stale proofs, tenant-scoped cleanup, holds and cleanup retry.
@@ -163,16 +175,16 @@ Screenshots and traces are written to ignored `artifacts/` and `test-results/` d
 
 For backend development, build once, stop the existing server and run `npm run dev`. UI changes need a new build and server restart. The interface uses React 19, TypeScript, Tailwind CSS 4, Motion, Lucide, TanStack Query for adaptive polling, Radix Dialog for keyboard-accessible confirmations and locally bundled IBM Plex fonts. The engineering photograph is by [Ilya Pavlov on Unsplash](https://unsplash.com/photos/monitor-showing-java-programming-OqtafYT5kTw), used under the [Unsplash License](https://unsplash.com/license); attribution is bundled with the image.
 
-| Source                              | Responsibility                                                         |
-| ----------------------------------- | ---------------------------------------------------------------------- |
-| `src/runner.ts`, `src/browser-engine.ts`, `src/network.ts` | Queue orchestration, browser checks, network restrictions and reports |
-| `src/worker-*.ts` | Authenticated worker protocol, child processes and evidence transfer |
-| `src/targets.ts`, `src/retention.ts` | Ownership proofs, retention policies, holds and durable file cleanup |
-| `src/access.ts`, `src/auth.ts`      | Organization permissions and OpenID Connect sessions                   |
-| `src/database.ts`, `src/store.ts`   | Transactions, scoped encryption, records and audit integrity           |
-| `src/operations.ts`, `src/cli.ts`   | Single-instance lease, backup, restore and operator commands           |
-| `src/server.ts`, `src/contracts.ts` | Validated HTTP API and shared models                                   |
-| `ui/src/`                           | Workbench, configuration, organization administration and review       |
-| `test/`                             | Integration tests, browser tests and synthetic identity provider       |
+| Source                                                     | Responsibility                                                             |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `src/runner.ts`, `src/browser-engine.ts`, `src/network.ts` | Queue orchestration, browser checks, network restrictions and reports      |
+| `src/worker-*.ts`                                          | Authenticated worker protocol, child processes and evidence transfer       |
+| `src/targets.ts`, `src/retention.ts`                       | Ownership proofs, retention policies, holds and durable file cleanup       |
+| `src/access.ts`, `src/auth.ts`, `src/registration.ts`      | Organization permissions, verified accounts, OIDC sessions and invitations |
+| `src/database.ts`, `src/store.ts`                          | Transactions, scoped encryption, records and audit integrity               |
+| `src/operations.ts`, `src/cli.ts`                          | Single-instance lease, backup, restore and operator commands               |
+| `src/server.ts`, `src/contracts.ts`                        | Validated HTTP API and shared models                                       |
+| `ui/src/`                                                  | Workbench, configuration, organization administration and review           |
+| `test/`                                                    | Integration tests, browser tests and synthetic identity provider           |
 
 The next commercial milestones are external customer pilots, infrastructure isolation review, service observability, enterprise identity lifecycle integrations and durable distributed queues for larger deployments. Billing, SCIM, per-company identity-provider configuration, automatic scheduling and high availability are not implemented in this release.

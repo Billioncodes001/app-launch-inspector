@@ -1,0 +1,467 @@
+.account-page {
+  min-height: 100vh;
+  background: #f5f4ef;
+  color: #172d39;
+  padding: 0 clamp(20px, 5vw, 80px) 64px;
+}
+.account-header {
+  max-width: 1320px;
+  margin: auto;
+  min-height: 92px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  border-bottom: 1px solid #d6dcd8;
+}
+.account-header .signin-brand {
+  text-decoration: none;
+  color: inherit;
+}
+.account-header-label {
+  margin-left: auto;
+  font:
+    10px "IBM Plex Mono",
+    monospace;
+  letter-spacing: 0.14em;
+  color: #566765;
+}
+.account-header > button {
+  margin-left: auto;
+}
+.account-layout {
+  max-width: 1240px;
+  margin: 54px auto 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr);
+  gap: clamp(32px, 6vw, 100px);
+  align-items: start;
+}
+.account-story h1 {
+  font-size: clamp(34px, 3.5vw, 52px);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1.08;
+  margin: 18px 0;
+}
+.account-story > p:not(.eyebrow) {
+  color: #4b615f;
+  font-size: 16px;
+  max-width: 420px;
+  line-height: 1.7;
+}
+.account-story .workspace-photo {
+  height: 200px;
+  margin: 28px 0;
+  border-radius: 4px;
+}
+.account-story .workspace-photo img {
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+}
+.account-steps {
+  padding: 0;
+  margin: 30px 0 0;
+  list-style: none;
+  display: grid;
+  gap: 22px;
+}
+.account-steps li {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  color: #506465;
+}
+.account-steps li > span {
+  height: 32px;
+  width: 32px;
+  border: 1px solid #bac7c3;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font:
+    11px "IBM Plex Mono",
+    monospace;
+  flex-shrink: 0;
+}
+.account-steps li[aria-current] > span {
+  background: #193c38;
+  color: #fff;
+  border-color: #193c38;
+}
+.account-steps strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+}
+.account-steps small {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+}
+.account-panel {
+  min-width: 0;
+  padding: clamp(24px, 3.5vw, 46px);
+  background: #fff;
+  border: 1px solid #d5ded9;
+  border-radius: 8px;
+  box-shadow: 0 12px 40px #172d3906;
+}
+.account-panel h2 {
+  font-size: clamp(25px, 2.5vw, 32px);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  margin: 10px 0 14px;
+}
+.account-panel p {
+  line-height: 1.7;
+  color: #526765;
+  font-size: 14px;
+}
+.account-identity {
+  display: flex;
+  gap: 13px;
+  align-items: center;
+  margin: 20px 0 28px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #e0e6e1;
+}
+.account-identity > span {
+  background: #eef3ee;
+  padding: 12px;
+  border-radius: 5px;
+}
+.account-identity > div {
+  min-width: 0;
+  flex: 1;
+}
+.account-identity strong,
+.account-identity small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.account-identity small {
+  color: #526765;
+  margin-top: 5px;
+}
+.account-identity > svg {
+  color: #236752;
+  flex-shrink: 0;
+}
+.organization-registration-form {
+  display: grid;
+  gap: 18px;
+  margin-top: 26px;
+}
+.organization-registration-form label,
+.account-reference,
+.invite-share label {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.organization-registration-form input,
+.account-reference input,
+.invite-share input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #b6c7c0;
+  border-radius: 5px;
+  padding: 13px 14px;
+  background: #fff;
+  color: #172d39;
+}
+.organization-registration-form input:focus,
+.account-reference input:focus {
+  outline: 3px solid #b2d9c6;
+  outline-offset: 2px;
+}
+.field-optional {
+  font-size: 11px;
+  font-weight: 400;
+  color: #526765;
+}
+.organization-registration-form .field-hint {
+  margin-top: -10px;
+  font-size: 12px;
+}
+.account-permissions,
+.account-next {
+  display: flex;
+  align-items: start;
+  gap: 12px;
+  padding: 16px;
+  background: #f0f5f1;
+  border: 1px solid #dce6dd;
+  border-radius: 5px;
+}
+.account-permissions svg,
+.account-next svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: #236752;
+}
+.account-permissions p {
+  margin: 0;
+  font-size: 12px;
+}
+.account-page .button {
+  background: #214d40;
+  border-color: #214d40;
+  color: white;
+  min-height: 46px;
+  justify-content: center;
+}
+.account-page .button:hover {
+  background: #173e33;
+}
+.account-page .button.secondary {
+  background: white;
+  color: #214d40;
+  border-color: #b5c8be;
+}
+.account-page .text-button {
+  color: #285c4b;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.account-security {
+  display: flex;
+  gap: 12px;
+  padding-top: 24px;
+  margin-top: 30px;
+  border-top: 1px solid #dce4de;
+}
+.account-security > svg {
+  flex-shrink: 0;
+  color: #285c4b;
+  margin-top: 3px;
+}
+.account-security strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.account-security p {
+  font-size: 12px;
+  margin: 8px 0;
+}
+.account-security button {
+  font-size: 12px;
+}
+.account-list {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0;
+}
+.account-invitation {
+  padding: 18px;
+  border: 1px solid #cbdad1;
+  border-radius: 5px;
+  display: grid;
+  gap: 16px;
+  background: #f8faf7;
+}
+.account-invitation strong,
+.account-invitation span,
+.account-invitation small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.account-invitation span {
+  font-size: 13px;
+  color: #526765;
+  margin-top: 6px;
+}
+.account-invitation small {
+  font-size: 11px;
+  color: #526765;
+  margin-top: 5px;
+}
+.account-workspace {
+  display: flex;
+  width: 100%;
+  gap: 14px;
+  align-items: center;
+  padding: 18px;
+  border: 1px solid #cbdad1;
+  border-radius: 5px;
+  background: white;
+  text-align: left;
+}
+.account-workspace:hover {
+  background: #f0f5f1;
+}
+.account-workspace > span {
+  flex: 1;
+  min-width: 0;
+}
+.account-workspace strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-weight: 500;
+}
+.account-workspace small {
+  display: block;
+  margin-top: 5px;
+  color: #526765;
+}
+.account-create-link {
+  margin-top: 16px;
+}
+.account-notice {
+  padding: 12px 16px;
+  color: #214d40 !important;
+  background: #eef6f1;
+  border: 1px solid #c0d9cb;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.account-success {
+  display: inline-flex;
+  padding: 14px;
+  border-radius: 50%;
+  color: #214d40;
+  background: #e6f0e8;
+  margin-bottom: 20px;
+}
+.account-next {
+  margin: 24px 0;
+}
+.account-next h3 {
+  font-size: 14px;
+  margin: 0;
+  font-weight: 500;
+}
+.account-next p {
+  font-size: 12px;
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+}
+.account-reference {
+  margin-bottom: 12px;
+}
+.account-reference input {
+  font:
+    12px "IBM Plex Mono",
+    monospace;
+}
+.account-primary {
+  display: flex;
+  width: 100%;
+  margin-top: 28px;
+}
+.demo-notice {
+  max-width: 1240px;
+  margin: 18px auto 0;
+  padding: 12px 16px;
+  border: 1px solid #d8c69d;
+  background: #fff8e9;
+  color: #705323;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.auth-switch {
+  font-size: 13px !important;
+}
+.auth-switch a {
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.pending-invites {
+  border-top: 1px solid #dce2df;
+  margin-top: 24px;
+  padding-top: 20px;
+}
+.pending-invites h3 {
+  font-size: 15px;
+  font-weight: 500;
+}
+.pending-invite {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid #e3e8e2;
+}
+.pending-invite > div {
+  flex: 1;
+  min-width: 0;
+}
+.pending-invite strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.pending-invite span {
+  display: block;
+  color: #526765;
+  font-size: 12px;
+  margin-top: 6px;
+}
+.invite-share {
+  padding: 16px;
+  background: #f3f6f0;
+  border-radius: 4px;
+  margin: 15px 0;
+}
+.invite-share button {
+  margin-top: 10px;
+}
+@media (max-width: 900px) {
+  .account-layout {
+    gap: 28px;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr);
+  }
+  .account-story .workspace-photo {
+    height: 170px;
+  }
+  .account-header-label {
+    display: none;
+  }
+}
+@media (max-width: 680px) {
+  .account-page {
+    padding: 0 16px 36px;
+  }
+  .account-header {
+    min-height: 74px;
+    gap: 10px;
+  }
+  .account-header .signin-brand {
+    font-size: 16px;
+  }
+  .account-layout {
+    margin-top: 28px;
+    grid-template-columns: 1fr;
+    gap: 26px;
+  }
+  .account-story h1 {
+    font-size: 34px;
+  }
+  .account-story .workspace-photo {
+    height: 150px;
+    margin: 20px 0;
+  }
+  .account-steps {
+    display: none;
+  }
+  .account-panel {
+    padding: 24px 20px;
+  }
+  .account-invitation .button {
+    width: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-page *,
+  .account-page *::before,
+  .account-page *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

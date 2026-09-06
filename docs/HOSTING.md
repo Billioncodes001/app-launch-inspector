@@ -1,6 +1,6 @@
 # Hosting and customer onboarding
 
-Launch Inspector 0.3 runs as one controller and one separate authenticated browser worker with separate customer organizations. This guide targets a dedicated Linux host and Docker Compose v2. Windows supports local development. Review [security boundaries](SECURITY.md) and [operations](OPERATIONS.md) before onboarding customer data.
+Launch Inspector 0.4 runs as one controller and one separate authenticated browser worker with separate customer organizations. This guide targets a dedicated Linux host and Docker Compose v2. Windows supports local development. Review [security boundaries](SECURITY.md) and [operations](OPERATIONS.md) before onboarding customer data.
 
 ## 1. Prepare infrastructure
 
@@ -35,6 +35,8 @@ Clone the repository, copy `.env.example` to `.env` and set these uncommented va
 INSPECTOR_DOMAIN=inspector.example.com
 INSPECTOR_OIDC_ISSUER=https://identity.example.com/your-issuer
 INSPECTOR_OIDC_CLIENT_ID=your-client-id
+# Optional: permit verified users to create organizations (default: invite_only)
+INSPECTOR_SIGNUP=self_service
 # Optional: provider-specific required authentication context
 # INSPECTOR_OIDC_REQUIRED_ACR=your-mfa-context
 ```
@@ -48,7 +50,28 @@ docker compose build
 
 Compose forces hosted mode, constructs the HTTPS public origin from `INSPECTOR_DOMAIN` and reads the secret through `INSPECTOR_OIDC_CLIENT_SECRET_FILE`. It uses a persistent named volume at `/data` and automatic TLS through Caddy. Pin reviewed container image digests in your release process and rebuild for browser/runtime security updates.
 
-## 4. Provision the first company
+## 4. Onboard companies
+
+### Self-service signup
+
+With `INSPECTOR_SIGNUP=self_service`, start the stack with `docker compose up -d`. Customers open `/signup` and authenticate through your configured provider. Enable the provider's own account-registration and verified-email flow if customers do not already have identities there; Launch Inspector never stores dashboard passwords. A successful signed, verified identity becomes an application account, even before it belongs to an organization. Existing preapproved memberships are still claimed on first verified sign-in.
+
+The account portal lets users accept an invitation or create an organization. Creation assigns only that new workspace's owner role, in a transaction. It never joins an existing company by domain or organization name. A replayed creation request returns the same organization. Each account may create three workspaces; the deployment caps organizations at 1,000 and accounts at 10,000. These limits bound this pilot, not a throughput commitment. Configure edge abuse controls and validate volume before opening registration broadly.
+
+New workspaces have no approved targets. An optional staging origin is recorded for operator review; no email or operator notification is sent. Operators list requests and approve an exact origin during maintenance:
+
+```sh
+docker compose stop inspector
+docker compose run --rm --no-deps inspector node dist/cli.js org-list
+docker compose run --rm --no-deps inspector node dist/cli.js org-approve-target \
+  --organization "CUSTOMER_ORGANIZATION_UUID" \
+  --target "https://staging.example.com"
+docker compose up -d inspector
+```
+
+Approval adds the origin to the existing allowlist. It does not prove domain control or run a check. The owner then opens **Organization controls → Verified targets**, publishes a DNS TXT record or HTTPS verification file, and verifies it before creating/running the first inspection. The signup completion screen and empty targets panel show the organization reference for the operator.
+
+### Operator-provisioned companies (invitation-only default)
 
 Before starting the service, approve the company owner and the exact HTTPS origins they may inspect:
 
@@ -64,9 +87,9 @@ docker compose ps
 
 Replace all example values. Repeat `--target` for additional approved origins, up to 50. Target DNS must resolve to public addresses and use valid HTTPS. The service operator is responsible for confirming that the company is authorized to inspect these origins; after provisioning, the owner must prove control in **Organization controls → Verified targets** using a company-specific DNS TXT record or HTTPS verification file. New challenges expire in 24 hours. Successful verification lasts 30 days; renew it using the same published record. Expired targets cannot start new inspections.
 
-The owner signs in with the exact approved, verified email. The first successful sign-in binds that membership to the issuer and subject; merely presenting the same email later from a different subject does not take it over. No invitation email is sent by Launch Inspector. An organization owner can add more approved emails through **Organization controls → People & access**.
+The owner signs in with the exact approved, verified email. The first successful sign-in binds that membership to the issuer and subject; merely presenting the same email later from a different subject does not take it over. No invitation email is sent by Launch Inspector. An organization owner invites teammates through **Organization controls → People & access**. Select a role and optional project scope, create the invitation, then copy and share the `/join` link. The app does not send email. Invited users authenticate with the exact verified email and explicitly accept. Invitations expire after seven days and may be revoked; acceptance rechecks the inviter's current owner access and never overwrites an existing membership. A new invitation is needed if its creator loses owner access. Members and pending invitations together are limited to 100 per organization. Existing operator/API preapproved membership behavior remains supported for managed provisioning.
 
-To provision another company, schedule a brief maintenance window, stop the inspector, run `org-create` again, then start it. The data-directory lease prevents provisioning while a service is active. Approved target origins are established at provisioning in this release; there is no self-service target-approval workflow.
+To provision another company, schedule a brief maintenance window, stop the inspector, run `org-create` again, then start it. The data-directory lease prevents provisioning while a service is active. Use `org-approve-target` to add a reviewed origin to an existing organization. Customers cannot approve their own targets.
 
 ## 5. Configure project access
 
@@ -87,22 +110,23 @@ Membership and project permissions are checked on every API request. Removal blo
 
 Run `node dist/cli.js worker` on a separate isolated worker host/container with `INSPECTOR_WORKER_TOKEN_FILE` and `INSPECTOR_WORKER_HOST` configured. Do not mount controller data or identity secrets there. Keep the worker endpoint private; use HTTPS for communication across hosts. The worker defaults to port 8799. Then install Node.js 24.13+, production dependencies, Chromium/system libraries and the built UI as described in the README. Run under a dedicated non-root account and a service manager. Set:
 
-| Variable                            | Purpose                                               |
-| ----------------------------------- | ----------------------------------------------------- |
-| `INSPECTOR_WORKER_URL` | Exact private worker origin; HTTPS across hosts, `http://worker:8799` within Compose |
-| `INSPECTOR_WORKER_TOKEN_FILE` | Private file containing the shared worker token |
-| `INSPECTOR_MODE=hosted`             | Enables authenticated organization mode               |
-| `INSPECTOR_PUBLIC_URL`              | Exact HTTPS origin, with no trailing slash/path/query |
-| `INSPECTOR_OIDC_ISSUER`             | HTTPS discovery issuer                                |
-| `INSPECTOR_OIDC_CLIENT_ID`          | Confidential application client ID                    |
-| `INSPECTOR_OIDC_CLIENT_SECRET_FILE` | Preferred private secret-file path                    |
-| `INSPECTOR_OIDC_CLIENT_SECRET`      | Alternative secret if no secret file is configured    |
-| `INSPECTOR_OIDC_REQUIRED_ACR`       | Optional exact authentication-context requirement     |
-| `INSPECTOR_DATA_DIR`                | Private persistent local directory                    |
-| `INSPECTOR_HOST`                    | Bind address, default `127.0.0.1`                     |
-| `INSPECTOR_PORT`                    | Control port, default `8795`                          |
+| Variable                            | Purpose                                                                              |
+| ----------------------------------- | ------------------------------------------------------------------------------------ |
+| `INSPECTOR_WORKER_URL`              | Exact private worker origin; HTTPS across hosts, `http://worker:8799` within Compose |
+| `INSPECTOR_WORKER_TOKEN_FILE`       | Private file containing the shared worker token                                      |
+| `INSPECTOR_SIGNUP`                  | `invite_only` (default) or `self_service`; controls new organization creation        |
+| `INSPECTOR_MODE=hosted`             | Enables authenticated organization mode                                              |
+| `INSPECTOR_PUBLIC_URL`              | Exact HTTPS origin, with no trailing slash/path/query                                |
+| `INSPECTOR_OIDC_ISSUER`             | HTTPS discovery issuer                                                               |
+| `INSPECTOR_OIDC_CLIENT_ID`          | Confidential application client ID                                                   |
+| `INSPECTOR_OIDC_CLIENT_SECRET_FILE` | Preferred private secret-file path                                                   |
+| `INSPECTOR_OIDC_CLIENT_SECRET`      | Alternative secret if no secret file is configured                                   |
+| `INSPECTOR_OIDC_REQUIRED_ACR`       | Optional exact authentication-context requirement                                    |
+| `INSPECTOR_DATA_DIR`                | Private persistent local directory                                                   |
+| `INSPECTOR_HOST`                    | Bind address, default `127.0.0.1`                                                    |
+| `INSPECTOR_PORT`                    | Control port, default `8795`                                                         |
 
-The CLI does not load `.env` automatically; use your service manager or `node --env-file=.env dist/cli.js`. Provision using the same data directory before serving. Missing identity settings, invalid public origins or provider discovery failures prevent hosted startup.
+The CLI does not load `.env` automatically; use your service manager or `node --env-file=.env dist/cli.js`. For invitation-only deployments, provision using the same data directory before serving. For self-service deployments, new organizations are created through the account portal. Missing identity settings, invalid public origins or provider discovery failures prevent hosted startup.
 
 Only the trusted TLS proxy should reach the control port. Preserve the original `Host` header; the service compares it to the configured public origin and does not trust arbitrary forwarded headers. Sign-in throttling is 30 requests per minute per directly connected IP, so clients behind one proxy share this limit. Add edge rate limiting and validate the expected sign-in volume before a larger rollout.
 
@@ -110,8 +134,8 @@ Only the trusted TLS proxy should reach the control port. Preserve the original 
 
 Use two actual pilot companies and your configured provider to verify sign-in, MFA, claim mapping, project restrictions, evidence access, logout and owner transfer. Run representative authorized staging checks, restore a backup onto a replacement host, and validate your network policy and monitoring. The repository's signed synthetic-provider tests verify protocol behavior but do not establish compatibility with every provider configuration.
 
-## Upgrade from 0.2
+## Upgrade from 0.2 / 0.3
 
-Stop the old controller and take a verified offline backup. Build the new image, provision the worker token and start the updated Compose stack. The controller migrates SQLite to schema 3. Existing organizations, projects, evidence and reviews remain available; each hosted origin must be verified before its next inspection. Retention defaults to disabled, so the upgrade itself does not remove existing reports.
+Stop the old controller and take a verified offline backup. Build the new image, provision the worker token and start the updated Compose stack. The controller migrates SQLite to schema 4, adding accounts, organization registrations and invitations. Existing identities retain their issuer/subject bindings. Registration remains invitation-only unless explicitly enabled. Do not run an older binary on the upgraded database; restore the verified pre-upgrade backup to a separate directory for rollback. Existing organizations, projects, evidence and reviews remain available; each hosted origin must be verified before its next inspection. Retention defaults to disabled, so the upgrade itself does not remove existing reports.
 
 The Compose networks separate worker control traffic from the public proxy; the worker has an additional egress network. These networks alone do **not** block access to your host, private networks or cloud metadata. Configure and test host/cloud egress policy for those destinations. The worker token authorizes browser jobs, so keep the endpoint private and rotate the token in both services during a coordinated restart.

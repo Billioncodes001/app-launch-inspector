@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { Onboarding, WorkspacePhoto } from "./onboarding";
 import { HoldControl } from "./controls";
+import { AccountPortal } from "./account";
 import {
   resultSummary,
   resultGuidance,
@@ -49,6 +50,7 @@ import "@fontsource/ibm-plex-sans/500.css";
 import "@fontsource/ibm-plex-sans/600.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "./styles.css";
+import "./account.css";
 import type {
   Check as InspectionCheck,
   CheckResult,
@@ -173,7 +175,7 @@ function App({
   const initialState: WorkspaceState = {
     projects: [],
     runs: [],
-    version: "0.3.1",
+    version: "0.4.0",
     organization,
     approvedOrigins: [],
     verifiedOrigins: [],
@@ -313,6 +315,9 @@ function App({
                   ))}
                 </select>
               </label>
+              <a className="text-button" href="/account">
+                Account
+              </a>
               <button className="text-button" onClick={onSignOut}>
                 Sign out
               </button>
@@ -1894,7 +1899,11 @@ function ProjectEditor({
 function WorkspaceRoot() {
   const [session, setSession] = useState<SessionInfo>(),
     [organizationId, setOrganizationId] = useState(""),
-    [error, setError] = useState("");
+    [error, setError] = useState(
+      new URLSearchParams(window.location.search).has("error")
+        ? "Sign-in could not be completed. Use your verified invited email, or create an account when registration is open. If it persists, contact your identity provider or service operator."
+        : "",
+    );
   async function load() {
     try {
       const response = await fetch("/api/session"),
@@ -1928,6 +1937,20 @@ function WorkspaceRoot() {
   const organization = session?.organizations.find(
     (o) => o.organizationId === organizationId,
   );
+  const accountRoute = ["/signup", "/account", "/join"].includes(
+    window.location.pathname,
+  );
+  const signupRoute = window.location.pathname === "/signup";
+  function signOut() {
+    void request("/logout", "POST", {})
+      .then(() => {
+        queryClient.clear();
+        window.location.assign("/signin");
+      })
+      .catch((e) => setError(e.message));
+  }
+  if (session?.authenticated && (accountRoute || !organization))
+    return <AccountPortal session={session} onSignOut={signOut} />;
   if (session?.authenticated && organization)
     return (
       <App
@@ -1940,15 +1963,7 @@ function WorkspaceRoot() {
           localStorage.setItem("inspector-organization", id);
           setOrganizationId(id);
         }}
-        onSignOut={() => {
-          void request("/logout", "POST", {})
-            .then(() => {
-              queryClient.clear();
-              setSession(undefined);
-              return load();
-            })
-            .catch((e) => setError(e.message));
-        }}
+        onSignOut={signOut}
       />
     );
   return (
@@ -1957,11 +1972,25 @@ function WorkspaceRoot() {
         <img src="/mark.svg" alt="" />
         Launch Inspector
       </div>
+      {session?.demo && (
+        <p className="demo-notice">
+          Demonstration environment · Synthetic identities and temporary
+          workspaces. No real accounts are created.
+        </p>
+      )}
       <div className="signin-layout">
         <WorkspacePhoto />
         <section className="signin-card">
-          <p className="eyebrow">THE ORGANIZATION WORKSPACE</p>
-          <h1>Your release checkpoint.</h1>
+          <p className="eyebrow">
+            {signupRoute
+              ? "START YOUR ORGANIZATION WORKSPACE"
+              : "THE ORGANIZATION WORKSPACE"}
+          </p>
+          <h1>
+            {signupRoute
+              ? "A stronger start for every release."
+              : "Your release checkpoint."}
+          </h1>
           <p>
             Inspect critical application flows, review the evidence, and keep a
             clear record of every release decision.
@@ -1986,15 +2015,37 @@ function WorkspaceRoot() {
             </p>
           ) : (
             <>
-              <a className="button" href="/auth/login">
+              <a
+                className="button"
+                href={
+                  accountRoute ? "/auth/login?returnTo=account" : "/auth/login"
+                }
+              >
                 <LockKeyhole size={17} />
-                Sign in with your work account
+                {signupRoute && session.signupEnabled
+                  ? "Create account with your work identity"
+                  : "Sign in with your work account"}
                 <ArrowRight size={17} />
               </a>
               <p className="signin-note">
-                Access is managed by your organization owner. Use the verified
-                email address approved for your membership.
+                {session.signupEnabled
+                  ? "Your sign-in provider verifies your email and manages your credentials. Then create your organization or accept a team invitation."
+                  : "This deployment is invitation only. Use the verified email approved by your organization owner. New workspaces are created by the service operator."}
               </p>
+              {signupRoute ? (
+                <p className="auth-switch">
+                  Already have an account? <a href="/signin">Sign in</a>
+                </p>
+              ) : session.signupEnabled ? (
+                <p className="auth-switch">
+                  New to Launch Inspector?{" "}
+                  <a href="/signup">Create an account</a>
+                </p>
+              ) : (
+                <p className="auth-switch">
+                  Have an invitation? <a href="/join">Join your organization</a>
+                </p>
+              )}
             </>
           )}
           <div className="signin-assurance">

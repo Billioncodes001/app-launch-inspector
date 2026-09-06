@@ -10,7 +10,7 @@ Graceful shutdown cancels queued/running inspections and closes browsers. After 
 
 ## Health and capacity
 
-`GET /healthz` returns `200` with `{"status":"ready","version":"0.3.1"}` when the lease, database, browser executable, runner storage state and configured remote worker are available. Worker health is refreshed every 15 seconds; the private worker has its own authenticated `/healthz`. It returns `503` when stopping or unhealthy. Requests still require the configured Host header. Health responses contain no company information. The endpoint does not prove that every target, identity-provider request or browser launch will succeed.
+`GET /healthz` returns `200` with `{"status":"ready","version":"0.4.0"}` when the lease, database, browser executable, runner storage state and configured remote worker are available. Worker health is refreshed every 15 seconds; the private worker has its own authenticated `/healthz`. It returns `503` when stopping or unhealthy. Requests still require the configured Host header. Health responses contain no company information. The endpoint does not prove that every target, identity-provider request or browser launch will succeed.
 
 ```sh
 docker compose ps

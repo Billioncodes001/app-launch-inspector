@@ -11,6 +11,8 @@ export const identities = {
   "editor-a@example.test": "Drew · Editor",
   "unapproved@example.test": "Unapproved account",
   "unverified@example.test": "Unverified account",
+  "new-owner@example.test": "Morgan · New organization",
+  "new-reviewer@example.test": "Riley · Invited reviewer",
 };
 export async function oidcFixture() {
   const key = await generateKeyPair("RS256", { extractable: true }),
@@ -226,7 +228,8 @@ export async function signIn(origin: string, email: string) {
     headers: {
       Cookie: cookie,
       "X-Inspector-Token": session.csrf,
-      "X-Inspector-Organization": session.organizations[0].organizationId,
+      "X-Inspector-Organization":
+        session.organizations[0]?.organizationId ?? "",
       "Content-Type": "application/json",
     },
   };

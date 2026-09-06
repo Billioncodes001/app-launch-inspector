@@ -14,6 +14,7 @@ const app = await startServer({
   publicOrigin: "http://127.0.0.1:8798",
   mode: "hosted",
   oidc: provider.settings,
+  signupEnabled: true,
   allowLoopbackTargetsForTests: true,
   browserSandbox: false,
   stepTimeoutMs: 1000,
