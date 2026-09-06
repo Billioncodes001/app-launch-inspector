@@ -2,7 +2,7 @@ name: launch-inspector
 services:
   inspector:
     build: .
-    image: launch-inspector:0.3.0
+    image: launch-inspector:0.3.1
     init: true
     restart: unless-stopped
     read_only: true
@@ -37,7 +37,7 @@ services:
       worker:
         condition: service_healthy
   worker:
-    image: launch-inspector:0.3.0
+    image: launch-inspector:0.3.1
     command: [node, dist/cli.js, worker]
     init: true
     restart: unless-stopped

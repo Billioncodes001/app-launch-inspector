@@ -6,6 +6,11 @@ import {
 } from "@tanstack/react-query";
 import { Onboarding, WorkspacePhoto } from "./onboarding";
 import { HoldControl } from "./controls";
+import {
+  resultSummary,
+  resultGuidance,
+  hasBlockedRequests,
+} from "../../src/result-presentation";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { retry: 1, staleTime: 1000, refetchOnWindowFocus: true },
@@ -113,7 +118,9 @@ function Badge({ status }: { status: string }) {
       ) : (
         <span />
       )}
-      {status.replaceAll("_", " ")}
+      {status === "completed"
+        ? "Execution finished"
+        : status.replaceAll("_", " ")}
     </span>
   );
 }
@@ -166,7 +173,7 @@ function App({
   const initialState: WorkspaceState = {
     projects: [],
     runs: [],
-    version: "0.3.0",
+    version: "0.3.1",
     organization,
     approvedOrigins: [],
     verifiedOrigins: [],
@@ -574,7 +581,20 @@ function App({
                                 r.results.filter((c) => c.status === "failed")
                                   .length
                               }{" "}
-                              failed · {r.results.length}/{r.total} checked
+                              failed ·{" "}
+                              {r.results.some(
+                                (c) => c.status === "inconclusive",
+                              ) && (
+                                <>
+                                  {
+                                    r.results.filter(
+                                      (c) => c.status === "inconclusive",
+                                    ).length
+                                  }{" "}
+                                  inconclusive ·{" "}
+                                </>
+                              )}
+                              {r.results.length}/{r.total} checked
                             </span>
                           </button>
                         ))}
@@ -770,7 +790,9 @@ function RunView({
         run.status === "completed"
           ? Math.max(
               0,
-              run.results.findIndex((r) => r.status === "failed"),
+              run.results.some((r) => r.status === "failed")
+                ? run.results.findIndex((r) => r.status === "failed")
+                : run.results.findIndex((r) => r.status === "inconclusive"),
             )
           : 0,
       ),
@@ -870,6 +892,13 @@ function RunView({
           {run.results.length} of {run.total} checks
         </span>
       </div>
+      {!running && unclear > 0 && (
+        <p className="run-limit-note">
+          {unclear} {unclear === 1 ? "check is" : "checks are"} inconclusive.
+          Execution finished, but those checks could not be fully verified.
+          Review their limitations before making a release decision.
+        </p>
+      )}
       {run.error && (
         <p className="run-error" role="alert">
           {run.error}
@@ -972,7 +1001,7 @@ function FindingView({
         )}
       </div>
       <h3>{r.name}</h3>
-      <p className="finding-summary">{r.summary}</p>
+      <p className="finding-summary">{resultSummary(r)}</p>
       <dl className="observation">
         <div>
           <dt>Expected</dt>
@@ -987,7 +1016,7 @@ function FindingView({
         <summary>
           Reproduce this check
           <span>
-            {r.steps.length} steps
+            {r.steps.length} {r.steps.length === 1 ? "step" : "steps"}
             <ChevronDown size={14} />
           </span>
         </summary>
@@ -1006,10 +1035,58 @@ function FindingView({
           <h4>
             {r.status === "passed" ? "Coverage note" : "Recommended next step"}
           </h4>
-          <p>{r.recommendation}</p>
+          <p>{resultGuidance(r)}</p>
         </div>
       </div>
       {review}
+      {hasBlockedRequests(r) && (
+        <section
+          className="network-diagnostics"
+          aria-label="Inspection network limits"
+        >
+          <h4>Blocked requests</h4>
+          <p>
+            Some requests could not run within the inspection’s network limits.
+            Visible text can still be found on a partially loaded page.
+          </p>
+          {r.network ? (
+            <>
+              <ul>
+                {r.network.destinations.map((d, i) => (
+                  <li key={i}>
+                    <div>
+                      <code>{d.origin}</code>
+                      <span>
+                        {d.resourceType} · {d.count}{" "}
+                        {d.count === 1 ? "request" : "requests"}
+                      </span>
+                    </div>
+                    <strong>
+                      {d.reason === "outside_origin"
+                        ? "Outside target origin"
+                        : d.reason === "request_budget"
+                          ? "Request limit reached"
+                          : "WebSocket unsupported"}
+                    </strong>
+                  </li>
+                ))}
+              </ul>
+              <p className="hint">
+                {r.network.blocked} blocked in total. Only origins are recorded;
+                URL paths and query values are omitted.
+                {r.network.truncated
+                  ? " Additional destinations were omitted from this bounded report."
+                  : ""}
+              </p>
+            </>
+          ) : (
+            <p className="hint">
+              This earlier inspection did not record blocked destinations. A new
+              inspection is needed to capture those details.
+            </p>
+          )}
+        </section>
+      )}
       {r.warnings.map((w, i) => (
         <p className="warning" key={i}>
           <CircleAlert size={14} />
@@ -1021,6 +1098,10 @@ function FindingView({
           <h4>
             Browser evidence <span>Inputs masked</span>
           </h4>
+          <p className="evidence-mask-note">
+            Input fields are covered for privacy. Colored overlays are added by
+            the inspector.
+          </p>
           <div className="evidence-grid">
             {r.screenshots.map((s) => (
               <Evidence

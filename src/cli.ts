@@ -34,7 +34,7 @@ async function main() {
       ? readFileSync(process.env.INSPECTOR_WORKER_TOKEN_FILE, "utf8").trim()
       : (process.env.INSPECTOR_WORKER_TOKEN ?? "");
   if (values.help) {
-    console.log(`Launch Inspector 0.3.0
+    console.log(`Launch Inspector 0.3.1
 
 node dist/cli.js                       Start local or hosted mode
 node dist/cli.js doctor                Check runtime prerequisites

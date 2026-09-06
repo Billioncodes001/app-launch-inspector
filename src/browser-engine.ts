@@ -9,6 +9,7 @@ import { join } from "node:path";
 import type { ProjectInput, Check, CheckResult } from "./contracts.js";
 import { inScope, pathUrl, targetPolicy } from "./network.js";
 import { browserEnvironment, type WorkerJob } from "./worker-protocol.js";
+import { resultSummary, resultGuidance } from "./result-presentation.js";
 class Finding extends Error {}
 export class BrowserEngine {
   constructor(
@@ -110,6 +111,46 @@ export class BrowserEngine {
       if (result.warnings.length < 12 && !result.warnings.includes(s))
         result.warnings.push(s);
     };
+    const blocked = (
+      url: string,
+      resourceType: string,
+      reason: NonNullable<
+        CheckResult["network"]
+      >["destinations"][number]["reason"],
+    ) => {
+      constrained = true;
+      result.network ??= { blocked: 0, destinations: [], truncated: false };
+      result.network.blocked++;
+      // Keep origins only: URL paths, queries and fragments may contain secrets.
+      let origin = "Non-HTTP destination";
+      try {
+        const parsed = new URL(url);
+        if (["http:", "https:", "ws:", "wss:"].includes(parsed.protocol))
+          origin = redact(parsed.origin).slice(0, 350);
+      } catch {}
+      const entry = result.network.destinations.find(
+        (d) =>
+          d.origin === origin &&
+          d.resourceType === resourceType &&
+          d.reason === reason,
+      );
+      if (entry) entry.count++;
+      else if (result.network.destinations.length < 16)
+        result.network.destinations.push({
+          origin,
+          resourceType,
+          reason,
+          count: 1,
+        });
+      else result.network.truncated = true;
+      warning(
+        reason === "websocket"
+          ? "WebSockets are not supported in this inspection."
+          : reason === "request_budget"
+            ? "The browser session exceeded its 250-request limit."
+            : "A request was blocked outside the configured target origin.",
+      );
+    };
     const textVisible = async (page: Page, text: string, wait = false) => {
       try {
         const locator = page
@@ -140,6 +181,7 @@ export class BrowserEngine {
               page.getByText(a.password, { exact: true }),
             ),
           ],
+          maskColor: "#cbd5e1",
         });
         result.screenshots.push({ file, label });
       } catch {
@@ -155,13 +197,14 @@ export class BrowserEngine {
       contexts.push(ctx);
       let requests = 0;
       await ctx.route("**/*", async (route) => {
-        if (
-          !inScope(route.request().url(), project.baseUrl) ||
-          ++requests > 250
-        ) {
-          constrained = true;
-          warning(
-            "A request was blocked outside the target origin or request budget.",
+        const request = route.request(),
+          outside = !inScope(request.url(), project.baseUrl);
+        requests++;
+        if (outside || requests > 250) {
+          blocked(
+            request.url(),
+            request.resourceType(),
+            outside ? "outside_origin" : "request_budget",
           );
           await route.abort().catch(() => undefined);
           return;
@@ -169,8 +212,7 @@ export class BrowserEngine {
         await route.continue().catch(() => undefined);
       });
       await ctx.routeWebSocket("**/*", (socket) => {
-        constrained = true;
-        warning("WebSockets are not supported in this inspection.");
+        blocked(socket.url(), "websocket", "websocket");
         socket.close();
       });
       ctx.on("page", (page) => {
@@ -362,6 +404,8 @@ export class BrowserEngine {
         result.recommendation =
           "Review the recorded warnings and rerun before relying on this check.";
       }
+      result.summary = resultSummary(result);
+      result.recommendation = resultGuidance(result);
       result.durationMs = Date.now() - started;
       // Redact every textual result, including user-supplied check labels and expectations.
       for (const key of [

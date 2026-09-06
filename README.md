@@ -4,7 +4,7 @@
 
 Launch Inspector checks login, account permissions and customer journeys against a running web application. It uses real Chromium sessions, records screenshots and reproduction steps, and gives teams a shared place to review the findings before release.
 
-Version **0.3.0** adds separate authenticated browser workers, expiring target ownership verification, evidence retention with protected reports, and a guided first-inspection flow. Hosted workspaces include OpenID Connect sign-in, project permissions, review decisions, audit history and tested recovery tools. Local mode remains available for individual developers. This is a working hosted pilot; production readiness still depends on your infrastructure, identity provider, operating procedures and independent security review.
+Version **0.3.1** adds separate authenticated browser workers, expiring target ownership verification, evidence retention with protected reports, and a guided first-inspection flow. Hosted workspaces include OpenID Connect sign-in, project permissions, review decisions, audit history and tested recovery tools. Local mode remains available for individual developers. This is a working hosted pilot; production readiness still depends on your infrastructure, identity provider, operating procedures and independent security review.
 
 ![Guided first-inspection setup](docs/onboarding.png)
 
@@ -116,7 +116,7 @@ Passwords are not returned to the browser. Leave an existing account's password 
 | Inconclusive            | A baseline, dependency, login contract or browser operation could not be completed reliably. |
 | Cancelled / interrupted | Unfinished checks have no passing result. Completed observations remain available.           |
 
-A completed run means execution finished. It does not mean all checks passed. Reports record the configuration revision, run ID, expected behavior, observations and reproduction steps. Screenshots remain separate files; Markdown and JSON exports do not embed their bytes. Known passwords and configured fill values are redacted from textual results.
+The **Execution finished** badge describes the run lifecycle. Each check has its own result; history explicitly shows inconclusive checks. A page can contain the expected text while still loading incompletely because a dependency was blocked. Such a check says **Expected text found; inspection limited** and remains inconclusive. New reports list blocked origins, resource types, reasons and counts, with up to 16 grouped destinations. URL paths and query strings are excluded from this diagnostic list. Earlier reports have no destination details; the UI explains when another run is needed to capture them. Reports record the configuration revision, run ID, expected behavior, observations and reproduction steps. Input fields are covered by privacy masks (neutral gray in new screenshots; earlier captures may use pink). These overlays are added by the inspector. Screenshots remain separate files; Markdown and JSON exports do not embed their bytes. Known passwords and configured fill values are redacted from textual results.
 
 Failed findings can be **open**, **investigating** or **accepted risk**, with a required review note. Only an owner can accept risk. Reviews and their authors appear in reports and audit history. Interrupted runs are never automatically replayed because a journey may have submitted a form already.
 

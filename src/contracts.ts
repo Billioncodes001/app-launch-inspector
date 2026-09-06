@@ -185,6 +185,24 @@ export type PublicProject = Omit<Project, "accounts"> & {
   >;
 };
 export type ResultStatus = "passed" | "failed" | "inconclusive" | "skipped";
+export const networkDiagnosticsSchema = z
+  .object({
+    blocked: z.number().int().nonnegative(),
+    destinations: z
+      .array(
+        z
+          .object({
+            origin: z.string().max(350),
+            resourceType: z.string().max(30),
+            reason: z.enum(["outside_origin", "request_budget", "websocket"]),
+            count: z.number().int().positive(),
+          })
+          .strict(),
+      )
+      .max(16),
+    truncated: z.boolean(),
+  })
+  .strict();
 export type CheckResult = {
   index: number;
   name: string;
@@ -199,6 +217,7 @@ export type CheckResult = {
   durationMs: number;
   screenshots: Array<{ file: string; label: string }>;
   warnings: string[];
+  network?: z.infer<typeof networkDiagnosticsSchema>;
 };
 export type Run = {
   id: string;

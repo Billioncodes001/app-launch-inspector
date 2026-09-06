@@ -8,6 +8,7 @@ import type { AddressInfo } from "node:net";
 import { Store } from "../src/store.js";
 import { Runner, reportMarkdown } from "../src/runner.js";
 import { startDemo, demoProject, DEMO_PASSWORD } from "../src/demo.js";
+import { resultSummary } from "../src/result-presentation.js";
 async function settled(store: Store, id: string) {
   const deadline = Date.now() + 90000;
   while (Date.now() < deadline) {
@@ -109,7 +110,7 @@ test("out-of-scope browser requests are blocked and prevent a clean pass", async
         ? '<form method="post"><label>Email<input name="email"></label><label>Password<input name="password" type="password"></label><button>Sign in</button></form>'
         : "";
     res.end(
-      `<html><body><h1>Ready</h1>${form}<img src="${outside}/secret"></body></html>`,
+      `<html><body><h1>Ready</h1>${form}<img src="${outside}/private-path?access_token=never-record-this-query"></body></html>`,
     );
   });
   await new Promise<void>((r) => site.listen(0, "127.0.0.1", r));
@@ -154,6 +155,40 @@ test("out-of-scope browser requests are blocked and prevent a clean pass", async
       JSON.stringify(run.results),
     );
     assert(run.results.every((result) => result.warnings.length > 0));
+    assert.equal(
+      run.results[0].summary,
+      "Expected text found; inspection limited",
+    );
+    assert.equal(run.results[0].observed, "Expected content is visible.");
+    assert(run.results[0].network!.blocked >= 1);
+    assert.deepEqual(run.results[0].network!.destinations, [
+      {
+        origin: outside,
+        resourceType: "image",
+        reason: "outside_origin",
+        count: 1,
+      },
+    ]);
+    assert(!JSON.stringify(run).includes("never-record-this-query"));
+    assert(!JSON.stringify(run).includes("private-path"));
+    assert(reportMarkdown(run).includes(outside));
+    assert(
+      reportMarkdown(run).includes("Expected text found; inspection limited"),
+    );
+    const legacy = {
+      ...run.results[0],
+      network: undefined,
+      summary: "Page content confirmed",
+    };
+    assert.equal(
+      resultSummary(legacy),
+      "Expected text found; inspection limited",
+    );
+    assert.equal(
+      legacy.summary,
+      "Page content confirmed",
+      "Presentation must not mutate stored evidence",
+    );
   } finally {
     await runner.close();
     site.closeAllConnections();

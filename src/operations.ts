@@ -166,7 +166,7 @@ export function createBackup(root: string, output: string) {
       filesUnder(root, join(root, "runs"), files);
     const manifest: Manifest = {
       format: 1,
-      version: "0.3.0",
+      version: "0.3.1",
       createdAt: new Date().toISOString(),
       files: [],
     };

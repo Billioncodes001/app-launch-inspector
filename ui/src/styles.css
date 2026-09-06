@@ -2061,3 +2061,79 @@
   background: #8c2430;
   border-color: #8c2430;
 }
+.badge.completed {
+  color: #526075;
+  background: #f1f4f8;
+  border-color: #d4dce6;
+}
+.run-limit-note {
+  padding: 15px 20px;
+  background: #fffbf0;
+  border-bottom: 1px solid #eedfb7;
+  color: #76551b;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.network-diagnostics {
+  margin: 24px 0;
+  padding: 20px;
+  background: #fbfaf6;
+  border: 1px solid #e7dfca;
+  border-radius: 7px;
+}
+.network-diagnostics h4 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.network-diagnostics p {
+  color: #637089;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.network-diagnostics ul {
+  margin: 15px 0;
+}
+.network-diagnostics li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  border-top: 1px solid #e7dfca;
+  padding: 12px 0;
+}
+.network-diagnostics li div {
+  min-width: 0;
+}
+.network-diagnostics code {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+.network-diagnostics li span {
+  display: block;
+  color: #637089;
+  font-size: 11px;
+  margin-top: 5px;
+}
+.network-diagnostics strong {
+  color: #76551b;
+  font-size: 11px;
+  font-weight: 500;
+}
+.evidence-mask-note {
+  font-size: 11px;
+  color: #637089;
+  line-height: 1.7;
+  margin: 8px 0 18px;
+}
+@media (max-width: 600px) {
+  .network-diagnostics {
+    padding: 16px;
+  }
+  .network-diagnostics li {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+}

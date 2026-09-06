@@ -242,6 +242,11 @@ export function Onboarding({
                 Choose a staging application you control. We’ll visit a page and
                 check for the text your customer should see.
               </p>
+              <p className="notice">
+                This first check verifies visible page text; it does not sign
+                in. Pages that depend on other origins, external sign-in
+                services or WebSockets may produce an inconclusive result.
+              </p>
               <label className="field">
                 Project name
                 <input

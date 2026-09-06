@@ -4,6 +4,7 @@ import { Store } from "./store.js";
 import { targetPolicy } from "./network.js";
 import { BrowserCapacity } from "./capacity.js";
 import { localActor } from "./database.js";
+import { resultSummary, resultGuidance } from "./result-presentation.js";
 
 export class Runner {
   private queue: Array<{
@@ -196,7 +197,19 @@ export function reportMarkdown(run: Run) {
     run.results
       .map(
         (r) =>
-          `## ${r.index + 1}. ${clean(r.name)} — ${r.status}\n\nExpected: ${clean(r.expected)}\n\nObserved: ${clean(r.observed)}\n\n${r.steps.map((s, i) => `${i + 1}. ${clean(s)}`).join("\n")}\n\nRecommendation: ${clean(r.recommendation)}\n\nWarnings: ${r.warnings.map(clean).join("; ") || "None recorded"}\n`,
+          `## ${r.index + 1}. ${clean(r.name)} — ${r.status}\n\n${clean(resultSummary(r))}\n\nExpected: ${clean(r.expected)}\n\nObserved: ${clean(r.observed)}\n\n${r.steps.map((s, i) => `${i + 1}. ${clean(s)}`).join("\n")}\n\nRecommendation: ${clean(resultGuidance(r))}\n\nWarnings: ${r.warnings.map(clean).join("; ") || "None recorded"}\n` +
+          (r.network
+            ? `\nBlocked requests: ${r.network.blocked}\n\n` +
+              r.network.destinations
+                .map(
+                  (d) =>
+                    `- ${clean(d.origin)} · ${clean(d.resourceType)} · ${d.reason.replaceAll("_", " ")} · ${d.count} request(s)`,
+                )
+                .join("\n") +
+              (r.network.truncated
+                ? "\nAdditional destinations omitted from this bounded report.\n"
+                : "\n")
+            : ""),
       )
       .join("\n") +
     (Object.keys(run.review ?? {}).length

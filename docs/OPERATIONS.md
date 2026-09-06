@@ -10,7 +10,7 @@ Graceful shutdown cancels queued/running inspections and closes browsers. After 
 
 ## Health and capacity
 
-`GET /healthz` returns `200` with `{"status":"ready","version":"0.3.0"}` when the lease, database, browser executable, runner storage state and configured remote worker are available. Worker health is refreshed every 15 seconds; the private worker has its own authenticated `/healthz`. It returns `503` when stopping or unhealthy. Requests still require the configured Host header. Health responses contain no company information. The endpoint does not prove that every target, identity-provider request or browser launch will succeed.
+`GET /healthz` returns `200` with `{"status":"ready","version":"0.3.1"}` when the lease, database, browser executable, runner storage state and configured remote worker are available. Worker health is refreshed every 15 seconds; the private worker has its own authenticated `/healthz`. It returns `503` when stopping or unhealthy. Requests still require the configured Host header. Health responses contain no company information. The endpoint does not prove that every target, identity-provider request or browser launch will succeed.
 
 ```sh
 docker compose ps
@@ -109,3 +109,7 @@ Protect `master.key`, the database/WAL, legacy files, screenshots and snapshots 
 Hosted Compose runs one worker service, capped at two concurrent child processes. Each child has a fresh temporary directory, a 256 MB Node heap budget and a 180-second lifetime; Chromium also consumes memory within the worker container's 2 GB limit. Result lines are limited to 17 MB, each screenshot to 3 MB and aggregate streamed evidence to 100 MB per inspection. Cancellation disconnects the worker request and terminates the child process tree. Normal completion and cancellation remove the temporary job directory. An abrupt container termination clears its tmpfs on replacement.
 
 The queue remains in controller memory; this release does not add durable queue replay or horizontal worker scaling. A worker crash produces an incomplete inspection. Restore service health and review the target state before manually starting another run. The worker is not mounted to persistent controller storage. Keep its token private and use HTTPS when running it on another host.
+
+## Investigating an inconclusive page check
+
+The first onboarding check looks for visible text; it does not authenticate a user. An external sign-in page may show the expected marker while depending on assets or services at other origins. Current inspections remain same-origin. Review the report’s **Blocked requests** section for the destination origin, resource type and reason. A request-budget limit and an outside-origin block are distinguished. Use a compatible staging deployment and rerun after resolving the limitation. Old evidence remains unchanged and does not gain historical destinations that were never captured.

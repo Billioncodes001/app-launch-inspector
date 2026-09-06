@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { projectSchema } from "./contracts.js";
+import { projectSchema, networkDiagnosticsSchema } from "./contracts.js";
 export const workerJobSchema = z
   .object({
     project: projectSchema,
@@ -34,6 +34,7 @@ export const workerEventSchema = z.discriminatedUnion("type", [
           )
           .max(4),
         warnings: z.array(text).max(12),
+        network: networkDiagnosticsSchema.optional(),
       }),
       evidence: z
         .array(

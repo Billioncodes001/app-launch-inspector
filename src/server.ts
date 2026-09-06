@@ -260,7 +260,7 @@ export async function startServer(options: {
         store.database.sql.prepare("SELECT 1").get();
         send(ready ? 200 : 503, {
           status: ready ? "ready" : "unavailable",
-          version: "0.3.0",
+          version: "0.3.1",
         });
         return;
       }
@@ -362,7 +362,7 @@ export async function startServer(options: {
               runs: scoped
                 .listRuns()
                 .filter((r) => access.canProject(member, r.projectId)),
-              version: "0.3.0",
+              version: "0.3.1",
               demoOrigin: hosted ? "" : options.demoOrigin,
               organization: member,
               approvedOrigins: hosted ? access.organization(org).origins : [],
