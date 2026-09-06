@@ -1,0 +1,14 @@
+node_modules/
+dist/
+ui-dist/
+.runtime/
+.env
+.env.*
+!.env.example
+test-results/
+playwright-report/
+artifacts/
+*.log
+*.zip
+storage-state*.json
+cookies*.json

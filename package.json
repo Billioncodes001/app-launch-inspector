@@ -1,0 +1,42 @@
+{
+  "name": "app-launch-inspector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local browser inspections for login, account permissions and customer journeys",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.server.json && tsc -p tsconfig.ui.json && vite build",
+    "start": "node dist/cli.js",
+    "dev": "tsx watch src/cli.ts",
+    "test": "tsx --test --test-concurrency=1 test/*.test.ts",
+    "test:ui": "playwright test",
+    "check": "npm run build && npm test && npm run test:ui"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-sans": "5.2.8",
+    "@fontsource/ibm-plex-mono": "5.2.7",
+    "lucide-react": "1.41.0",
+    "motion": "13.2.0",
+    "playwright": "1.63.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.63.0",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "prettier": "3.6.2",
+    "tailwindcss": "4.3.3",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vite": "8.2.2"
+  }
+}
