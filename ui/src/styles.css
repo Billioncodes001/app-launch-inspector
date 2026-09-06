@@ -61,11 +61,6 @@
     font-size: 10px;
     line-height: 1.6;
   }
-  .workspace-photo figcaption a {
-    display: block;
-    text-decoration: underline;
-    text-underline-offset: 3px;
-  }
   .visual-foot {
     @apply flex justify-between gap-2;
     padding: 22px 26px;

@@ -19,16 +19,7 @@ export function WorkspacePhoto() {
         width="1400"
         height="935"
       />
-      <figcaption>
-        Engineering, with intention.{" "}
-        <a
-          href="https://unsplash.com/photos/OqtafYT5kTw"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Photo: Ilya Pavlov / Unsplash
-        </a>
-      </figcaption>
+      <figcaption>Engineering, with intention.</figcaption>
     </figure>
   );
 }
