@@ -65,7 +65,7 @@ test("failed authorized baseline is inconclusive and does not certify a permissi
   const dir = mkdtempSync(join(tmpdir(), "launch-inspector-baseline-")),
     demo = await startDemo(0),
     store = new Store(dir),
-    runner = new Runner(store, 8795, { stepTimeoutMs: 500 });
+    runner = new Runner(store, 8795, { stepTimeoutMs: 2000 });
   try {
     const p = demoProject(demo.origin, "fixed");
     p.checks = [p.checks[2]];
@@ -92,23 +92,51 @@ test("out-of-scope browser requests are blocked and prevent a clean pass", async
   });
   await new Promise<void>((r) => external.listen(0, "127.0.0.1", r));
   const outside = `http://127.0.0.1:${(external.address() as AddressInfo).port}`;
-  const site = createServer((_, res) => {
+  const site = createServer((req, res) => {
+    if (req.method === "POST" && req.url === "/login") {
+      req.resume();
+      res.writeHead(303, { Location: "/account" });
+      res.end();
+      return;
+    }
     res.setHeader("Content-Type", "text/html");
+    const form =
+      req.url === "/login"
+        ? '<form method="post"><label>Email<input name="email"></label><label>Password<input name="password" type="password"></label><button>Sign in</button></form>'
+        : "";
     res.end(
-      `<html><body><h1>Ready</h1><img src="${outside}/secret"></body></html>`,
+      `<html><body><h1>Ready</h1>${form}<img src="${outside}/secret"></body></html>`,
     );
   });
   await new Promise<void>((r) => site.listen(0, "127.0.0.1", r));
   const dir = mkdtempSync(join(tmpdir(), "launch-inspector-scope-")),
     store = new Store(dir),
-    runner = new Runner(store, 8795, { stepTimeoutMs: 500 });
+    runner = new Runner(store, 8795, { stepTimeoutMs: 2000 });
   try {
     const p = demoProject(
       `http://127.0.0.1:${(site.address() as AddressInfo).port}`,
       "fixed",
     );
+    p.login.path = "/login";
+    p.login.successPath = "/account";
+    p.login.successText = "Ready";
     p.checks = [
       { kind: "page", name: "Scoped page", path: "/", expectedText: "Ready" },
+      {
+        kind: "page",
+        name: "Missing content with a blocked dependency",
+        path: "/",
+        expectedText: "Rendered by the blocked dependency",
+      },
+      {
+        kind: "access",
+        name: "A blocked dependency does not excuse visible unauthorized content",
+        path: "/protected",
+        owner: "admin",
+        actor: "anonymous",
+        expectedText: "Ready",
+        deniedText: "Access denied",
+      },
     ];
     const saved = store.saveProject(p),
       run = await settled(
@@ -116,8 +144,12 @@ test("out-of-scope browser requests are blocked and prevent a clean pass", async
         (await runner.enqueue(store.getProject(saved.id))).id,
       );
     assert.equal(contacted, 0);
-    assert.equal(run.results[0].status, "inconclusive");
-    assert(run.results[0].warnings.length > 0);
+    assert.deepEqual(
+      run.results.map((result) => result.status),
+      ["inconclusive", "inconclusive", "failed"],
+      JSON.stringify(run.results),
+    );
+    assert(run.results.every((result) => result.warnings.length > 0));
   } finally {
     await runner.close();
     site.closeAllConnections();

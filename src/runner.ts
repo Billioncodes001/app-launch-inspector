@@ -164,6 +164,7 @@ export class Runner {
     const started = Date.now();
     const contexts: BrowserContext[] = [];
     let current: Page | undefined;
+    let constrained = false;
     const result: CheckResult = {
       index,
       name: check.name,
@@ -233,6 +234,7 @@ export class Runner {
           !inScope(route.request().url(), project.baseUrl) ||
           ++requests > 250
         ) {
+          constrained = true;
           warning(
             "A request was blocked outside the target origin or request budget.",
           );
@@ -242,6 +244,7 @@ export class Runner {
         await route.continue().catch(() => undefined);
       });
       await ctx.routeWebSocket("**/*", (socket) => {
+        constrained = true;
         warning("WebSockets are not supported in this inspection.");
         socket.close();
       });
@@ -420,9 +423,16 @@ export class Runner {
     } finally {
       if (current) await capture(current, "Observed result");
       for (const ctx of contexts) await ctx.close().catch(() => undefined);
-      // Requests can be blocked while the final evidence is being captured.
-      if (result.status === "passed" && result.warnings.length) {
+      // A blocked dependency can explain a missing page/journey assertion.
+      // Observed unauthorized access remains a finding even if a request was blocked.
+      if (
+        (result.status === "passed" && result.warnings.length) ||
+        (result.status === "failed" &&
+          constrained &&
+          (check.kind === "page" || check.kind === "journey"))
+      ) {
         result.status = "inconclusive";
+        result.severity = "info";
         result.summary = "Check needs investigation";
         result.recommendation =
           "Review the recorded warnings and rerun before relying on this check.";
