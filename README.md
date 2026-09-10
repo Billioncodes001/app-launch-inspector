@@ -4,6 +4,10 @@
 
 Launch Inspector checks login, account permissions and customer journeys against a running web application. It uses real Chromium sessions, records screenshots and reproduction steps, and gives teams a shared place to review the findings before release.
 
+![Launch Inspector release field guide and first-inspection setup](docs/preview.webp)
+
+_Interface preview from the working local onboarding screen. This optimized version of `docs/onboarding.png` is also used in the portfolio's Work section._
+
 Version **0.4.0** adds verified account registration, organization onboarding, expiring team invitations and personal session controls. It includes separate authenticated browser workers, target ownership verification, evidence retention and a guided first inspection. Hosted workspaces include OpenID Connect sign-in, project permissions, review decisions, audit history and tested recovery tools. Local mode remains available for individual developers. This is a working hosted pilot; production readiness still depends on your infrastructure, identity provider, operating procedures and independent security review.
 
 ![Organization signup and onboarding](docs/account-signup.png)
