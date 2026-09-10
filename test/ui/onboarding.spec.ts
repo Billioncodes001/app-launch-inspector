@@ -57,6 +57,10 @@ test("guided onboarding is responsive, accessible, and runs a configured real pa
       name: "Build a clearer picture of your release.",
     }),
   ).toBeVisible();
+  await expect(page.locator(".onboarding-content > div:has(> h2)")).toHaveCSS(
+    "opacity",
+    "1",
+  );
   for (const width of [1440, 1024, 768, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
     await expect(page.locator(".onboarding img")).toBeVisible();
@@ -147,7 +151,9 @@ test("retention preview and verified-target management are available to an organ
   await page.addInitScript(() =>
     localStorage.setItem("inspector-welcome-seen", "true"),
   );
-  await page.goto("http://127.0.0.1:8798");
+  await page.goto(
+    `http://127.0.0.1:${process.env.INSPECTOR_HOSTED_UI_PORT || 8798}`,
+  );
   await page
     .getByRole("link", { name: "Sign in with your work account" })
     .click();

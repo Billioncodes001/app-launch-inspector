@@ -16,6 +16,26 @@ import { browserEnvironment, type WorkerJob } from "../src/worker-protocol.js";
 import { startDemo, demoProject } from "../src/demo.js";
 const token = "synthetic-worker-token-with-32-characters";
 
+test("an unavailable browser channel cannot claim worker readiness", async () => {
+  const original = process.env.PLAYWRIGHT_CHANNEL;
+  process.env.PLAYWRIGHT_CHANNEL = "unavailable-fixture-channel";
+  const worker = await startWorker({ port: 0, token, sandboxForTests: false });
+  try {
+    assert.equal(
+      (
+        await fetch(worker.origin + "/healthz", {
+          headers: { Authorization: "Bearer " + token },
+        })
+      ).status,
+      503,
+    );
+  } finally {
+    if (original === undefined) delete process.env.PLAYWRIGHT_CHANNEL;
+    else process.env.PLAYWRIGHT_CHANNEL = original;
+    await worker.close();
+  }
+});
+
 test("remote worker authenticates, runs a real browser, streams evidence and cleans its job directory", async () => {
   const directory = mkdtempSync(join(tmpdir(), "inspector-remote-")),
     demo = await startDemo(0),

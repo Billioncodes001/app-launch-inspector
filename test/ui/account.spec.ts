@@ -1,7 +1,9 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
-test.use({ baseURL: "http://127.0.0.1:8798" });
+test.use({
+  baseURL: `http://127.0.0.1:${process.env.INSPECTOR_HOSTED_UI_PORT || 8798}`,
+});
 test("new customer signs up, creates an isolated organization and reaches its setup workspace", async ({
   page,
 }) => {
@@ -116,7 +118,9 @@ test("failed identity verification returns a helpful sign-in screen without an a
 test("local workspace explains hosted signup instead of pretending to register an account", async ({
   page,
 }) => {
-  await page.goto("http://127.0.0.1:8797/signup");
+  await page.goto(
+    `http://127.0.0.1:${process.env.INSPECTOR_UI_PORT || 8797}/signup`,
+  );
   await expect(
     page.getByRole("heading", { name: "Hosted accounts, when you need them." }),
   ).toBeVisible();

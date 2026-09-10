@@ -66,6 +66,7 @@ export function browserEnvironment() {
     "FONTCONFIG_PATH",
     "XDG_CACHE_HOME",
     "PLAYWRIGHT_BROWSERS_PATH",
+    "PLAYWRIGHT_CHANNEL",
   ];
   return Object.fromEntries(
     Object.entries(process.env).filter(

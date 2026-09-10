@@ -5,6 +5,7 @@ import { startDemo, demoProject } from "../src/demo.js";
 import { startServer } from "../src/server.js";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { comparisonFixture } from "./fixtures/comparison.js";
 const dir = mkdtempSync(join(tmpdir(), "launch-inspector-ui-"));
 const demo = await startDemo(0);
 const dependencySite = createServer((_req, res) => {
@@ -16,7 +17,7 @@ const dependencySite = createServer((_req, res) => {
 await new Promise<void>((r) => dependencySite.listen(0, "127.0.0.1", r));
 const app = await startServer({
   dataDir: dir,
-  port: 8797,
+  port: Number(process.env.INSPECTOR_UI_PORT || 8797),
   demoOrigin: demo.origin,
   stepTimeoutMs: 800,
 });
@@ -26,6 +27,7 @@ const archive = app.store.saveProject({
   name: "Archived synthetic inspection",
 });
 const archivedRun = app.store.createRun(app.store.getProject(archive.id));
+comparisonFixture(app.store, demo.origin);
 archivedRun.status = "completed";
 archivedRun.createdAt = "2000-01-01T00:00:00.000Z";
 app.store.saveRun(archivedRun);

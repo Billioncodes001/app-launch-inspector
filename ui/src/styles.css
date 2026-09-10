@@ -2132,3 +2132,60 @@
     gap: 8px;
   }
 }
+/* Saved observations retain their own status, independently of review decisions. */
+.run-comparison {
+  margin: 20px;
+  padding: 20px;
+  border: 1px solid #cbd5dc;
+  background: #f4f7f8;
+  border-radius: 8px;
+}
+.run-comparison h3 {
+  margin: 0 0 8px;
+}
+.run-comparison p {
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 10px 0;
+}
+.run-comparison label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.run-comparison select {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  background: white;
+  border: 1px solid #8b9ba7;
+  border-radius: 4px;
+}
+.comparison-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.run-comparison ul {
+  list-style: none;
+  padding: 0;
+}
+.run-comparison li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  border-top: 1px solid #cbd5dc;
+  padding: 10px 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .run-comparison {
+    margin: 12px;
+    padding: 14px;
+  }
+  .run-comparison li {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}

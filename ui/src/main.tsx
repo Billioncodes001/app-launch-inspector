@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { Onboarding, WorkspacePhoto } from "./onboarding";
 import { HoldControl } from "./controls";
+import { Comparison } from "./comparison";
 import { AccountPortal } from "./account";
 import {
   resultSummary,
@@ -620,6 +621,7 @@ function App({
                   >
                     {run ? (
                       <RunView
+                        runs={state.runs}
                         onRefresh={refresh}
                         run={run}
                         onCancel={() =>
@@ -765,6 +767,7 @@ function App({
   );
 }
 function RunView({
+  runs,
   onRefresh,
   run,
   onCancel,
@@ -774,6 +777,7 @@ function RunView({
   canAcceptRisk,
   onReview,
 }: {
+  runs: Run[];
   run: Run;
   onRefresh: () => Promise<unknown>;
   onCancel: () => void;
@@ -807,14 +811,16 @@ function RunView({
   const running = ["queued", "running"].includes(run.status);
   const failed = run.results.filter((r) => r.status === "failed").length,
     passed = run.results.filter((r) => r.status === "passed").length,
-    unclear = run.results.filter((r) => r.status === "inconclusive").length;
+    unclear = run.results.filter((r) => r.status === "inconclusive").length,
+    skipped = run.results.filter((r) => r.status === "skipped").length,
+    missing = run.total - run.results.length;
   const title = running
     ? "Inspection in progress"
     : run.status !== "completed"
       ? "Inspection stopped"
       : failed
         ? "Findings to resolve"
-        : unclear
+        : unclear || skipped || missing
           ? "Checks need investigation"
           : "Configured checks passed";
   return (
@@ -894,7 +900,8 @@ function RunView({
           {unclear} inconclusive
         </span>
         <span className="checks-count">
-          {run.results.length} of {run.total} checks
+          {skipped} skipped · {missing} missing · {run.results.length} of{" "}
+          {run.total} checks
         </span>
       </div>
       {!running && unclear > 0 && (
@@ -909,6 +916,7 @@ function RunView({
           {run.error}
         </p>
       )}
+      {!running && <Comparison key={run.id} run={run} runs={runs} />}
       {!run.results.length ? (
         <div className="run-wait">
           <LoaderCircle size={30} className="spin" />

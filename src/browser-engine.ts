@@ -41,7 +41,7 @@ export class BrowserEngine {
     );
     if (signal.aborted) throw Error("Inspection cancelled");
     const browser = await chromium.launch({
-      channel: "chromium",
+      channel: process.env.PLAYWRIGHT_CHANNEL || "chromium",
       headless: true,
       chromiumSandbox: job.sandbox,
       env: browserEnvironment(),

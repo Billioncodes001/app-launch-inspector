@@ -8,6 +8,7 @@ import { chromium } from "playwright";
 import { z } from "zod";
 import { Store, validId } from "./store.js";
 import { Runner, reportMarkdown } from "./runner.js";
+import { compareRuns } from "./comparison.js";
 import {
   projectSchema,
   memberSchema,
@@ -734,6 +735,31 @@ export async function startServer(options: {
                 "The inspection worker is unavailable. Try again after the operator restores it.",
               );
             send(202, await runnerFor(org).enqueue(p, actor));
+            return;
+          }
+          const comparisonPath = path.match(
+            /^\/api\/runs\/([^/]+)\/compare\/([^/]+)$/,
+          );
+          if (comparisonPath && req.method === "GET") {
+            const before = scoped.getRun(comparisonPath[1]);
+            access.assertProject(member, before.projectId);
+            const after = scoped.getRun(comparisonPath[2]);
+            access.assertProject(member, after.projectId);
+            const comparison = compareRuns(before, after);
+            if (url.searchParams.get("export") === "json") {
+              store.database.audit(
+                org,
+                actor,
+                "comparison.exported",
+                after.id,
+                { baseline: before.id },
+              );
+              res.setHeader(
+                "Content-Disposition",
+                `attachment; filename="comparison-${before.id}-${after.id}.json"`,
+              );
+              send(200, { comparison, originalRuns: [before, after] });
+            } else send(200, comparison);
             return;
           }
           const reviewPath = path.match(

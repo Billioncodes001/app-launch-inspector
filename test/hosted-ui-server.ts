@@ -10,8 +10,8 @@ const dir = mkdtempSync(join(tmpdir(), "launch-inspector-hosted-ui-")),
   demo = await startDemo(0);
 const app = await startServer({
   dataDir: dir,
-  port: 8798,
-  publicOrigin: "http://127.0.0.1:8798",
+  port: Number(process.env.INSPECTOR_HOSTED_UI_PORT || 8798),
+  publicOrigin: `http://127.0.0.1:${process.env.INSPECTOR_HOSTED_UI_PORT || 8798}`,
   mode: "hosted",
   oidc: provider.settings,
   signupEnabled: true,

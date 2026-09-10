@@ -2,7 +2,11 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { timingSafeEqual } from "node:crypto";
 import { executeProcess } from "./worker-client.js";
-import { workerJobSchema, type WorkerEvent } from "./worker-protocol.js";
+import {
+  browserEnvironment,
+  workerJobSchema,
+  type WorkerEvent,
+} from "./worker-protocol.js";
 import { targetPolicy } from "./network.js";
 import { existsSync } from "node:fs";
 import { chromium } from "playwright";
@@ -15,6 +19,23 @@ export async function startWorker(options: {
 }) {
   if (options.token.length < 32)
     throw Error("Configure a worker secret with at least 32 characters");
+  // A channel override must actually launch, not bypass the worker readiness check.
+  let channelAvailable = false;
+  const channel = process.env.PLAYWRIGHT_CHANNEL;
+  if (channel && channel !== "chromium") {
+    try {
+      const browser = await chromium.launch({
+        channel,
+        headless: true,
+        chromiumSandbox: options.sandboxForTests ?? true,
+        env: browserEnvironment(),
+      });
+      await browser.close();
+      channelAvailable = true;
+    } catch {
+      /* An unavailable configured channel keeps health fail-closed. */
+    }
+  }
   const jobs = new Set<AbortController>(),
     tasks = new Set<Promise<void>>();
   let closing = false,
@@ -33,7 +54,11 @@ export async function startWorker(options: {
       return;
     }
     if (req.url === "/healthz" && req.method === "GET") {
-      const ready = !closing && existsSync(chromium.executablePath());
+      const ready =
+        !closing &&
+        (channel && channel !== "chromium"
+          ? channelAvailable
+          : existsSync(chromium.executablePath()));
       res.writeHead(ready ? 200 : 503, {
         "Content-Type": "application/json",
       });

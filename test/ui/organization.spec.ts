@@ -5,7 +5,9 @@ test.beforeEach(async ({ page }) => {
     localStorage.setItem("inspector-welcome-seen", "true"),
   );
 });
-test.use({ baseURL: "http://127.0.0.1:8798" });
+test.use({
+  baseURL: `http://127.0.0.1:${process.env.INSPECTOR_HOSTED_UI_PORT || 8798}`,
+});
 async function login(page: Page, email = "owner-a@example.test") {
   await page.goto("/");
   await page
@@ -126,7 +128,9 @@ test("owner can invite a scoped member, the recipient accepts, and access can be
   const recipient = await browser.newContext();
   try {
     const join = await recipient.newPage();
-    await join.goto("http://127.0.0.1:8798/join");
+    await join.goto(
+      `http://127.0.0.1:${process.env.INSPECTOR_HOSTED_UI_PORT || 8798}/join`,
+    );
     await join
       .getByRole("link", { name: "Sign in with your work account" })
       .click();

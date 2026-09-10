@@ -178,6 +178,34 @@ test("real OIDC sessions isolate companies, enforce project roles and revoke acc
     assert.equal(as.getRun(runId).results[0].status, "passed");
     const ar = as.getRun(runId),
       evidence = ar.results[0].screenshots[0].file;
+    const compared = as.createRun(as.getProject(ap.id));
+    compared.status = "completed";
+    compared.results = structuredClone(ar.results);
+    as.saveRun(compared);
+    const comparisonUrl = `/api/runs/${ar.id}/compare/${compared.id}?export=json`;
+    assert.equal(
+      (await fetch(app.origin + comparisonUrl, { headers: viewer.headers }))
+        .status,
+      200,
+    );
+    assert.equal(
+      (await fetch(app.origin + comparisonUrl, { headers: ownerB.headers }))
+        .status,
+      404,
+    );
+    const restrictedRun = as.createRun(as.getProject(hidden.id));
+    for (const pair of [
+      [ar.id, restrictedRun.id],
+      [restrictedRun.id, ar.id],
+    ])
+      assert.equal(
+        (
+          await fetch(app.origin + `/api/runs/${pair[0]}/compare/${pair[1]}`, {
+            headers: viewer.headers,
+          })
+        ).status,
+        404,
+      );
     assert.equal(
       (
         await fetch(app.origin + "/api/runs/" + runId + "/hold", {
@@ -276,6 +304,11 @@ test("real OIDC sessions isolate companies, enforce project roles and revoke acc
       body: JSON.stringify({ email: "viewer-a@example.test", version: 1 }),
     });
     assert.equal(revocation.status, 200);
+    assert.equal(
+      (await fetch(app.origin + comparisonUrl, { headers: viewer.headers }))
+        .status,
+      403,
+    );
     assert.equal(
       (await fetch(app.origin + "/api/state", { headers: viewer.headers }))
         .status,

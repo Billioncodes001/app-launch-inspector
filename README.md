@@ -124,11 +124,26 @@ Passwords are not returned to the browser. Leave an existing account's password 
 
 ## Understand the evidence
 
+### Compare saved runs
+
+Select the later run in **Inspection history**, then choose **Baseline run** under **What changed?**. Only distinct finished runs of the same project, exact target and saved configuration revision qualify. Saving even identical configuration creates a new revision and deliberately prevents comparison with earlier revisions. Runs are paired by stable check index; mismatched recorded names/kinds or duplicate indices fail closed.
+
+- **New:** passed to failed. **Resolved:** failed to passed. **Persistent:** failed in both runs. **Unchanged:** passed in both.
+- **Unverified:** either observation is skipped, inconclusive or missing. A previously failed check without a later passing observation is never resolved. Cancelled/interrupted runs retain their observed checks and show missing checks separately.
+- **Export comparison JSON** includes the computed changes, matching rule/limits and both original run records, including observations, warnings, screenshot references and current review notes. It does not include credentials, screenshot bytes or configuration secrets. Both runs must remain accessible; retention deletion or revoked access prevents export.
+
+Comparison is read-only and does not execute a browser or change evidence/review decisions. Accepted risk remains a failure. Configuration matching does not prove identical application builds, browser versions, test data or environment; this is not launch certification. The picker is limited to the existing latest-100-run history. No storage migration is needed.
+
+![Saved-run comparison in the actual desktop workbench](docs/comparison-1440.png)
+
+_Actual local interface with synthetic saved comparison records, not a claim that these particular observations came from live browser execution. [Phone capture](docs/comparison-390.png). Original real-browser sample scenarios remain independently tested._
+
 | Result                  | Meaning                                                                                      |
 | ----------------------- | -------------------------------------------------------------------------------------------- |
 | Passed                  | The configured assertion succeeded in this execution environment.                            |
 | Failed                  | Observed behavior contradicted the assertion. Review the evidence and configuration.         |
 | Inconclusive            | A baseline, dependency, login contract or browser operation could not be completed reliably. |
+| Skipped / missing       | No conclusive observation exists for that check; it must not be counted as passed or resolved. |
 | Cancelled / interrupted | Unfinished checks have no passing result. Completed observations remain available.           |
 
 The **Execution finished** badge describes the run lifecycle. Each check has its own result; history explicitly shows inconclusive checks. A page can contain the expected text while still loading incompletely because a dependency was blocked. Such a check says **Expected text found; inspection limited** and remains inconclusive. New reports list blocked origins, resource types, reasons and counts, with up to 16 grouped destinations. URL paths and query strings are excluded from this diagnostic list. Earlier reports have no destination details; the UI explains when another run is needed to capture them. Reports record the configuration revision, run ID, expected behavior, observations and reproduction steps. Input fields are covered by privacy masks (neutral gray in new screenshots; earlier captures may use pink). These overlays are added by the inspector. Screenshots remain separate files; Markdown and JSON exports do not embed their bytes. Known passwords and configured fill values are redacted from textual results.
@@ -166,6 +181,10 @@ npm run check
 ```
 
 This builds the server and React UI, runs the backend/integration suite, then the dashboard browser suite. Ports **8797** and **8798** must be free. Stop the organization demo first. All fixtures use temporary data and synthetic accounts.
+
+For an isolated concurrent test run, use `INSPECTOR_UI_PORT=5311 INSPECTOR_HOSTED_UI_PORT=5312 PLAYWRIGHT_CHANNEL=chrome npm run test:ui`. `PLAYWRIGHT_CHANNEL=chrome` uses an already installed Chrome for both dashboard tests and inspection workers; without it, install the bundled Chromium as described above. Worker readiness probes an overridden channel by actually launching and closing it at startup; an unavailable channel remains unhealthy. The default packaged Chromium behavior is unchanged. On macOS, use a canonical temporary directory such as `TMPDIR=/private/tmp` for core/browser tests because retention deliberately rejects symlinked evidence paths. No existing workspace database is used. See [comparison verification](docs/COMPARISON_VERIFICATION.md) for this local pass.
+
+This local enhancement passed **31 core tests, all 19 browser scenarios and the typechecked production build**, using temporary synthetic data and installed Chrome. No live identity provider, customer pilot, Docker/CI run or public deployment was performed in this pass.
 
 - Actual browser runs demonstrate four seeded failures and six passing checks after correction.
 - Registration tests exercise verified and rejected signup, CSRF, idempotent creation, workspace quotas, invitation acceptance/expiry/revocation, session revocation, tenant isolation and schema migration.
